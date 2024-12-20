@@ -8,6 +8,7 @@ using Czertainly.Auth.Models.Config;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
 using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -97,13 +98,15 @@ namespace Czertainly.Auth.Services
             else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationToken))
             {
                 // Authentication token processing
-                _logger.LogInformation("Authenticating user with OIDC token");
+                _logger.LogInformation("Authenticating user with JWT token");
                 AuthenticationTokenDto? authenticationToken = null;
+
                 try
                 {
-                    var decodedToken = Convert.FromBase64String(authenticationRequestDto.AuthenticationToken);
-                    var decodedTokenString = Encoding.UTF8.GetString(decodedToken);
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(decodedToken);
+                    var handler = new JwtSecurityTokenHandler();
+                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationToken);
+                    string payload = DecodeBase64Url(token.EncodedPayload);
+                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(payload);
                 }
                 catch (Exception ex)
                 {
@@ -145,13 +148,14 @@ namespace Czertainly.Auth.Services
             else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationToken))
             {
                 // Authentication token processing
-                _logger.LogDebug($"Authenticating user with OIDC token. Create users: {_authOptions.CreateUnknownUsers}. Create roles: {_authOptions.CreateUnknownRoles}. Sync policy: {_authOptions.SyncPolicy}");
+                _logger.LogDebug("Authenticating user with JWT token. Create users: {CreateUnknownUsers}. Create roles: {CreateUnknownRoles}. Sync policy: {SyncPolicy}", _authOptions.CreateUnknownUsers, _authOptions.CreateUnknownRoles, _authOptions.SyncPolicy);
                 AuthenticationTokenDto? authenticationToken = null;
                 try
                 {
-                    var decodedToken = Convert.FromBase64String(authenticationRequestDto.AuthenticationToken);
-                    var decodedTokenString = Encoding.UTF8.GetString(decodedToken);
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(decodedToken);
+                    var handler = new JwtSecurityTokenHandler();
+                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationToken);
+                    string payload = DecodeBase64Url(token.EncodedPayload);
+                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(payload);
                 }
                 catch (Exception ex)
                 {
@@ -360,5 +364,18 @@ namespace Czertainly.Auth.Services
             var users = await _repositoryManager.User.GetRoleUsersAsync(roleUuid);
             return _mapper.Map<List<UserDto>>(users);
         }
+
+        private static string DecodeBase64Url(string base64Url)
+        {
+            string base64 = base64Url.Replace('-', '+').Replace('_', '/');
+            switch (base64.Length % 4)
+            {
+                case 2: base64 += "=="; break;
+                case 3: base64 += "="; break;
+            }
+            return Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+        }
     }
+
+
 }
