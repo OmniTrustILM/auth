@@ -152,10 +152,7 @@ namespace Czertainly.Auth.Services
                 AuthenticationTokenDto? authenticationToken = null;
                 try
                 {
-                    var handler = new JwtSecurityTokenHandler();
-                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationToken);
-                    string payload = DecodeBase64Url(token.EncodedPayload);
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(payload);
+                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(authenticationRequestDto.AuthenticationToken);
                 }
                 catch (Exception ex)
                 {
