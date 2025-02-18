@@ -95,18 +95,18 @@ namespace Czertainly.Auth.Services
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
             }
-            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationToken))
+            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationTokenUserClaims))
             {
                 // Authentication token processing
                 _logger.LogInformation("Authenticating user with JWT token");
-                AuthenticationTokenDto? authenticationToken = null;
+                AuthenticationTokenClaimsDto? authenticationToken = null;
 
                 try
                 {
                     var handler = new JwtSecurityTokenHandler();
-                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationToken);
+                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationTokenUserClaims);
                     string payload = DecodeBase64Url(token.EncodedPayload);
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(payload);
+                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenClaimsDto>(payload);
                 }
                 catch (Exception ex)
                 {
@@ -145,27 +145,27 @@ namespace Czertainly.Auth.Services
 
                 if (user == null) throw new UnauthorizedException("Unknown user for specified client certificate.");
             }
-            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationToken))
+            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationTokenUserClaims))
             {
                 // Authentication token processing
                 _logger.LogDebug("Authenticating user with JWT token. Create users: {CreateUnknownUsers}. Create roles: {CreateUnknownRoles}. Sync policy: {SyncPolicy}", _authOptions.CreateUnknownUsers, _authOptions.CreateUnknownRoles, _authOptions.SyncPolicy);
-                AuthenticationTokenDto? authenticationToken = null;
+                AuthenticationTokenClaimsDto? authenticationTokenClaims = null;
                 try
                 {
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenDto>(authenticationRequestDto.AuthenticationToken);
+                    authenticationTokenClaims = JsonSerializer.Deserialize<AuthenticationTokenClaimsDto>(authenticationRequestDto.AuthenticationTokenUserClaims);
                 }
                 catch (Exception ex)
                 {
                     throw new UnauthorizedException("Wrong format of authentication token.", ex);
                 }
 
-                if (authenticationToken == null) throw new UnauthorizedException("Authentication token is empty or invalid JSON.");
-                var roleNames = new HashSet<string>(authenticationToken.Roles) ?? new HashSet<string>();
+                if (authenticationTokenClaims == null) throw new UnauthorizedException("Authentication token claims are empty or invalid JSON.");
+                var roleNames = new HashSet<string>(authenticationTokenClaims.Roles) ?? new HashSet<string>();
 
-                _logger.LogInformation($"Auth token contains user with username '{authenticationToken.Username}' and roles '{string.Join(',', roleNames)}'");
+                _logger.LogInformation($"Auth token contains user with username '{authenticationTokenClaims.Username}' and roles '{string.Join(',', roleNames)}'");
 
-                user = await _repository.GetByConditionAsync(u => u.Username == authenticationToken.Username);
-                if (user == null && !_authOptions.CreateUnknownUsers) throw new UnauthorizedException($"Unknown user with username '{authenticationToken.Username}'.");
+                user = await _repository.GetByConditionAsync(u => u.Username == authenticationTokenClaims.Username);
+                if (user == null && !_authOptions.CreateUnknownUsers) throw new UnauthorizedException($"Unknown user with username '{authenticationTokenClaims.Username}'.");
 
                 var transaction = await _repositoryManager.BeginTransactionAsync();
 
@@ -175,16 +175,16 @@ namespace Czertainly.Auth.Services
                     if (user == null)
                     {
                         isNewUser = true;
-                        _logger.LogInformation($"Creating new user with username '{authenticationToken.Username}'");
-                        user = _mapper.Map<User>(authenticationToken);
+                        _logger.LogInformation($"Creating new user with username '{authenticationTokenClaims.Username}'");
+                        user = _mapper.Map<User>(authenticationTokenClaims);
                         _repository.Create(user);
                         await _repositoryManager.SaveAsync();
                     }
                     else if (_authOptions.SyncPolicy == SyncPolicy.SyncData)
                     {
-                        user.FirstName = authenticationToken.FirstName;
-                        user.LastName = authenticationToken.LastName;
-                        user.Email = authenticationToken.Email;
+                        user.FirstName = authenticationTokenClaims.FirstName;
+                        user.LastName = authenticationTokenClaims.LastName;
+                        user.Email = authenticationTokenClaims.Email;
                         await _repositoryManager.SaveAsync();
                     }
 
@@ -214,7 +214,7 @@ namespace Czertainly.Auth.Services
 
                             if (roleUuid.HasValue)
                             {
-                                _logger.LogInformation($"Assign role '{roleName}' to user '{authenticationToken.Username}'");
+                                _logger.LogInformation($"Assign role '{roleName}' to user '{authenticationTokenClaims.Username}'");
                                 await AssignRoleAsync(user.Uuid, roleUuid.Value);
                             }
                         }
@@ -223,7 +223,7 @@ namespace Czertainly.Auth.Services
                         {
                             foreach (var removeRoleName in userRolesNames.Keys.Except(roleNames))
                             {
-                                _logger.LogInformation($"Unassign role '{removeRoleName}' to user '{authenticationToken.Username}'");
+                                _logger.LogInformation($"Unassign role '{removeRoleName}' to user '{authenticationTokenClaims.Username}'");
                                 await RemoveRoleAsync(user.Uuid, userRolesNames[removeRoleName]);
                             }
                         }

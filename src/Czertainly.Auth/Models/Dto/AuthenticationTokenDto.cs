@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Czertainly.Auth.Models.Dto
 {
-    public class AuthenticationTokenDto
+    public class AuthenticationTokenClaimsDto
     {
         [Required]
         [JsonPropertyName("sub")]
