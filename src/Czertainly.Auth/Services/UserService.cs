@@ -8,11 +8,8 @@ using Czertainly.Auth.Models.Config;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
 using Microsoft.Extensions.Options;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.Json;
 
 namespace Czertainly.Auth.Services
 {
@@ -95,28 +92,13 @@ namespace Czertainly.Auth.Services
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
             }
-            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationTokenUserClaims))
+            else if (authenticationRequestDto.AuthenticationTokenUserClaims != null)
             {
                 // Authentication token processing
-                _logger.LogInformation("Authenticating user with JWT token");
-                AuthenticationTokenClaimsDto? authenticationToken = null;
-
-                try
-                {
-                    var handler = new JwtSecurityTokenHandler();
-                    var token = handler.ReadJwtToken(authenticationRequestDto.AuthenticationTokenUserClaims);
-                    string payload = DecodeBase64Url(token.EncodedPayload);
-                    authenticationToken = JsonSerializer.Deserialize<AuthenticationTokenClaimsDto>(payload);
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidFormatException("Wrong format of authentication token.", ex);
-                }
-
-                if (authenticationToken != null)
-                {
-                    user = await _repository.GetByConditionAsync(u => u.Username == authenticationToken.Username);
-                }
+                _logger.LogInformation("Authenticating user with claims from JWT");
+                AuthenticationTokenClaimsDto? authenticationTokenClaims = authenticationRequestDto.AuthenticationTokenUserClaims;
+                string? username = ResolveUsernameFromClaims(authenticationTokenClaims) ?? throw new UnauthorizedException("Username not found in authentication token claims.");
+                user = await _repository.GetByConditionAsync(u => u.Username == username);
             }
             else if (!string.IsNullOrEmpty(authenticationRequestDto.SystemUsername))
             {
@@ -145,27 +127,20 @@ namespace Czertainly.Auth.Services
 
                 if (user == null) throw new UnauthorizedException("Unknown user for specified client certificate.");
             }
-            else if (!string.IsNullOrEmpty(authenticationRequestDto.AuthenticationTokenUserClaims))
+            else if (authenticationRequestDto.AuthenticationTokenUserClaims != null)
             {
                 // Authentication token processing
                 _logger.LogDebug("Authenticating user with JWT token. Create users: {CreateUnknownUsers}. Create roles: {CreateUnknownRoles}. Sync policy: {SyncPolicy}", _authOptions.CreateUnknownUsers, _authOptions.CreateUnknownRoles, _authOptions.SyncPolicy);
-                AuthenticationTokenClaimsDto? authenticationTokenClaims = null;
-                try
-                {
-                    authenticationTokenClaims = JsonSerializer.Deserialize<AuthenticationTokenClaimsDto>(authenticationRequestDto.AuthenticationTokenUserClaims);
-                }
-                catch (Exception ex)
-                {
-                    throw new UnauthorizedException("Wrong format of authentication token.", ex);
-                }
+                AuthenticationTokenClaimsDto? authenticationTokenClaims =authenticationRequestDto.AuthenticationTokenUserClaims;
+    
+                var roleNames = new HashSet<string>(authenticationTokenClaims.Roles);
 
-                if (authenticationTokenClaims == null) throw new UnauthorizedException("Authentication token claims are empty or invalid JSON.");
-                var roleNames = new HashSet<string>(authenticationTokenClaims.Roles) ?? new HashSet<string>();
 
-                _logger.LogInformation($"Auth token contains user with username '{authenticationTokenClaims.Username}' and roles '{string.Join(',', roleNames)}'");
+                string? username = ResolveUsernameFromClaims(authenticationTokenClaims) ?? throw new UnauthorizedException("Username not found in authentication token claims.");
+                _logger.LogInformation("Auth token contains user with username '{Username}' and roles '{Roles}'", username, string.Join(',', roleNames));
 
-                user = await _repository.GetByConditionAsync(u => u.Username == authenticationTokenClaims.Username);
-                if (user == null && !_authOptions.CreateUnknownUsers) throw new UnauthorizedException($"Unknown user with username '{authenticationTokenClaims.Username}'.");
+                user = await _repository.GetByConditionAsync(u => u.Username == username);
+                if (user == null && !_authOptions.CreateUnknownUsers) throw new UnauthorizedException($"Unknown user with username '{username}'.");
 
                 var transaction = await _repositoryManager.BeginTransactionAsync();
 
@@ -175,7 +150,7 @@ namespace Czertainly.Auth.Services
                     if (user == null)
                     {
                         isNewUser = true;
-                        _logger.LogInformation($"Creating new user with username '{authenticationTokenClaims.Username}'");
+                        _logger.LogInformation("Creating new user with username '{Username}'", username);
                         user = _mapper.Map<User>(authenticationTokenClaims);
                         _repository.Create(user);
                         await _repositoryManager.SaveAsync();
@@ -207,14 +182,14 @@ namespace Czertainly.Auth.Services
                             if (role != null && !userRolesNames.ContainsKey(roleName)) roleUuid = role.Uuid;
                             if (role == null && _authOptions.CreateUnknownRoles)
                             {
-                                _logger.LogInformation($"Creating new role with name '{roleName}'");
+                                _logger.LogInformation("Creating new role with name '{RoleName}'", roleName);
                                 var roleDto = await _roleService.CreateAsync(new RoleRequestDto { Name = roleName });
                                 roleUuid = roleDto.Uuid;
                             }
 
                             if (roleUuid.HasValue)
                             {
-                                _logger.LogInformation($"Assign role '{roleName}' to user '{authenticationTokenClaims.Username}'");
+                                _logger.LogInformation("Assign role '{RoleName}' to user '{Username}'", roleName, username);
                                 await AssignRoleAsync(user.Uuid, roleUuid.Value);
                             }
                         }
@@ -223,7 +198,7 @@ namespace Czertainly.Auth.Services
                         {
                             foreach (var removeRoleName in userRolesNames.Keys.Except(roleNames))
                             {
-                                _logger.LogInformation($"Unassign role '{removeRoleName}' to user '{authenticationTokenClaims.Username}'");
+                                _logger.LogInformation("Unassigning role '{RemoveRoleName}' to user '{Username}'", removeRoleName, username);
                                 await RemoveRoleAsync(user.Uuid, userRolesNames[removeRoleName]);
                             }
                         }
@@ -362,15 +337,9 @@ namespace Czertainly.Auth.Services
             return _mapper.Map<List<UserDto>>(users);
         }
 
-        private static string DecodeBase64Url(string base64Url)
+        private static string? ResolveUsernameFromClaims(AuthenticationTokenClaimsDto authenticationTokenClaims)
         {
-            string base64 = base64Url.Replace('-', '+').Replace('_', '/');
-            switch (base64.Length % 4)
-            {
-                case 2: base64 += "=="; break;
-                case 3: base64 += "="; break;
-            }
-            return Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+            return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername ?? null;
         }
     }
 

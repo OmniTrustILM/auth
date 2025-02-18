@@ -10,9 +10,11 @@ namespace Czertainly.Auth.Models.Dto
         [JsonPropertyName("sub")]
         public string SubjectId { get; init; }
 
-        [Required]
         [JsonPropertyName("username")]
-        public string Username { get; init; }
+        public string? Username { get; init; }
+
+        [JsonPropertyName("preferred_username")]
+        public string? PreferredUsername { get; init; }
 
         [JsonPropertyName("given_name")]
         public string? FirstName { get; init; }
@@ -21,7 +23,7 @@ namespace Czertainly.Auth.Models.Dto
         public string? LastName { get; init; }
 
         [JsonPropertyName("email")]
-        public string Email { get; init; }
+        public string? Email { get; init; }
 
         [JsonPropertyName("roles")]
         public string[] Roles { get; init; } = Array.Empty<string>();
