@@ -97,7 +97,7 @@ namespace Czertainly.Auth.Services
                 // Authentication token processing
                 _logger.LogInformation("Authenticating user with claims from JWT");
                 AuthenticationTokenClaimsDto? authenticationTokenClaims = authenticationRequestDto.AuthenticationTokenUserClaims;
-                string? username = ResolveUsernameFromClaims(authenticationTokenClaims) ?? throw new UnauthorizedException("Username not found in authentication token claims.");
+                string username = ResolveUsernameFromClaims(authenticationTokenClaims);
                 user = await _repository.GetByConditionAsync(u => u.Username == username);
             }
             else if (!string.IsNullOrEmpty(authenticationRequestDto.SystemUsername))
@@ -131,12 +131,12 @@ namespace Czertainly.Auth.Services
             {
                 // Authentication token processing
                 _logger.LogDebug("Authenticating user with JWT token. Create users: {CreateUnknownUsers}. Create roles: {CreateUnknownRoles}. Sync policy: {SyncPolicy}", _authOptions.CreateUnknownUsers, _authOptions.CreateUnknownRoles, _authOptions.SyncPolicy);
-                AuthenticationTokenClaimsDto? authenticationTokenClaims =authenticationRequestDto.AuthenticationTokenUserClaims;
-    
+                AuthenticationTokenClaimsDto? authenticationTokenClaims = authenticationRequestDto.AuthenticationTokenUserClaims;
+
                 var roleNames = new HashSet<string>(authenticationTokenClaims.Roles);
 
 
-                string? username = ResolveUsernameFromClaims(authenticationTokenClaims) ?? throw new UnauthorizedException("Username not found in authentication token claims.");
+                string username = ResolveUsernameFromClaims(authenticationTokenClaims);
                 _logger.LogInformation("Auth token contains user with username '{Username}' and roles '{Roles}'", username, string.Join(',', roleNames));
 
                 user = await _repository.GetByConditionAsync(u => u.Username == username);
@@ -337,9 +337,14 @@ namespace Czertainly.Auth.Services
             return _mapper.Map<List<UserDto>>(users);
         }
 
-        private static string? ResolveUsernameFromClaims(AuthenticationTokenClaimsDto authenticationTokenClaims)
+        private static string ResolveUsernameFromClaims(AuthenticationTokenClaimsDto authenticationTokenClaims)
         {
-            return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername ?? null;
+            if (authenticationTokenClaims.Username == null && authenticationTokenClaims.PreferredUsername == null)
+            {
+                throw new UnauthorizedException("Username not found in authentication token claims.");
+            }
+
+            return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername;
         }
     }
 
