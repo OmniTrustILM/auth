@@ -4,7 +4,7 @@
     {
         public string? CertificateContent { get; init; }
 
-        public string? AuthenticationToken { get; init; }
+        public AuthenticationTokenClaimsDto? AuthenticationTokenUserClaims { get; init; }
         
         public string? SystemUsername { get; init; }
         public string? UserUuid { get; init; }
