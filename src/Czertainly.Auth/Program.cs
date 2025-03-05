@@ -36,6 +36,10 @@ try
     }, typeof(Program));
 
     builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.AllowTrailingCommas = true;
+        })
         .ConfigureApiBehaviorOptions(options =>
         {
             options.InvalidModelStateResponseFactory = context =>
