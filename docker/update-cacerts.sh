@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 PEM_FILE=$1
 CERTS=$(grep 'END CERTIFICATE' $PEM_FILE| wc -l)
