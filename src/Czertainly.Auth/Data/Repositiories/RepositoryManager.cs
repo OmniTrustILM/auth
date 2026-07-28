@@ -8,11 +8,11 @@ namespace Czertainly.Auth.Data.Repositiories
     {
         private AuthDbContext _dbContext;
 
-        private IUserRepository _user;
-        private IRoleRepository _role;
-        private IPermissionRepository _permission;
-        private IResourceRepository _resource;
-        private IActionRepository _action;
+        private IUserRepository? _user;
+        private IRoleRepository? _role;
+        private IPermissionRepository? _permission;
+        private IResourceRepository? _resource;
+        private IActionRepository? _action;
 
         public IUserRepository User
         {
