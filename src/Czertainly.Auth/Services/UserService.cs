@@ -7,7 +7,9 @@ using Czertainly.Auth.Data.Contracts;
 using Czertainly.Auth.Models.Config;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -88,7 +90,7 @@ namespace Czertainly.Auth.Services
                 var clientCertificate = ParseCertificate(authenticationRequestDto.CertificateContent);
 
                 var sha256Fingerprint = Convert.ToHexString(clientCertificate.GetCertHash(HashAlgorithmName.SHA256)).ToLower();
-                _logger.LogInformation("Certificate parsed. Fingerprint: " + sha256Fingerprint);
+                _logger.LogInformation("Certificate parsed. Fingerprint: {Fingerprint}", SanitizeForLog(sha256Fingerprint));
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
             }
@@ -121,7 +123,7 @@ namespace Czertainly.Auth.Services
                 if (!isCertValid) throw new UnauthorizedException("User client certificate is invalid.", new Exception(string.Join('\n', chainStatusInfos)));
 
                 var sha256Fingerprint = Convert.ToHexString(clientCertificate.GetCertHash(HashAlgorithmName.SHA256)).ToLower();
-                _logger.LogDebug("Certificate parsed and verified. Fingerprint: " + sha256Fingerprint);
+                _logger.LogDebug("Certificate parsed and verified. Fingerprint: {Fingerprint}", SanitizeForLog(sha256Fingerprint));
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
 
@@ -152,10 +154,24 @@ namespace Czertainly.Auth.Services
                         isNewUser = true;
                         _logger.LogInformation("Creating new user with username '{Username}'", username);
                         user = _mapper.Map<User>(authenticationTokenClaims);
+                        user.Username = username;
                         _repository.Create(user);
-                        await _repositoryManager.SaveAsync();
+                        try
+                        {
+                            await _repositoryManager.SaveAsync();
+                        }
+                        catch (DbUpdateException ex) when (IsUsernameUniqueViolation(ex))
+                        {
+                            var sanitizedUsername = SanitizeForLog(username);
+                            _logger.LogInformation(ex, "User '{Username}' was created concurrently; continuing with the existing user", sanitizedUsername);
+                            _repositoryManager.Detach(user);
+                            user = await _repository.GetByConditionAsync(u => u.Username == username);
+                            if (user == null) throw;
+                            isNewUser = false;
+                        }
                     }
-                    else if (_authOptions.SyncPolicy == SyncPolicy.SyncData)
+
+                    if (!isNewUser && _authOptions.SyncPolicy == SyncPolicy.SyncData)
                     {
                         user.FirstName = authenticationTokenClaims.FirstName;
                         user.LastName = authenticationTokenClaims.LastName;
@@ -215,14 +231,14 @@ namespace Czertainly.Auth.Services
             }
             else if (!string.IsNullOrEmpty(authenticationRequestDto.SystemUsername))
             {
-                _logger.LogDebug($"Authenticating system user with username '{authenticationRequestDto.SystemUsername}'");
+                _logger.LogDebug("Authenticating system user with username '{SystemUsername}'", SanitizeForLog(authenticationRequestDto.SystemUsername));
                 user = await _repository.GetByConditionAsync(u => u.SystemUser && u.Username == authenticationRequestDto.SystemUsername);
 
                 if (user == null) throw new UnauthorizedException("Unknown system user for specified username: " + authenticationRequestDto.SystemUsername);
             }
             else if (!string.IsNullOrEmpty(authenticationRequestDto.UserUuid))
             {
-                _logger.LogDebug($"Authenticating user with UUID '{authenticationRequestDto.UserUuid}'");
+                _logger.LogDebug("Authenticating user with UUID '{UserUuid}'", SanitizeForLog(authenticationRequestDto.UserUuid));
                 user = await _repository.GetByConditionAsync(u => u.Uuid == Guid.Parse(authenticationRequestDto.UserUuid));
 
                 if (user == null) throw new UnauthorizedException("Unknown user for specified UUID: " + authenticationRequestDto.UserUuid);
@@ -244,7 +260,7 @@ namespace Czertainly.Auth.Services
                 Data = new UserProfileDto
                 {
                     User = _mapper.Map<UserDto>(user),
-                    Roles = user.Roles.Select(r => new NameAndUuidDto { Uuid = r.Uuid, Name = r.Name }).ToList(),
+                    Roles = (user.Roles ?? []).Select(r => new NameAndUuidDto { Uuid = r.Uuid, Name = r.Name }).ToList(),
                     Permissions = permissions,
                 }
             };
@@ -296,11 +312,11 @@ namespace Czertainly.Auth.Services
             return _mapper.Map<UserDetailDto>(user);
         }
 
-        private X509Certificate2 ParseCertificate(string clientCertificateContent)
+        private static X509Certificate2 ParseCertificate(string clientCertificateContent)
         {
             try
             {
-                return new X509Certificate2(Convert.FromBase64String(clientCertificateContent));
+                return X509CertificateLoader.LoadCertificate(Convert.FromBase64String(clientCertificateContent));
             }
             catch (FormatException ex)
             {
@@ -308,7 +324,7 @@ namespace Czertainly.Auth.Services
             }
         }
 
-        private bool VerifyClientCertificate(X509Certificate2 certificate, out List<string> chainStatusInfos)
+        private static bool VerifyClientCertificate(X509Certificate2 certificate, out List<string> chainStatusInfos)
         {
             chainStatusInfos = new List<string>();
 
@@ -344,8 +360,15 @@ namespace Czertainly.Auth.Services
                 throw new UnauthorizedException("Username not found in authentication token claims.");
             }
 
-            return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername;
+            return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername!;
         }
+
+        private static bool IsUsernameUniqueViolation(DbUpdateException ex)
+            => ex.InnerException is PostgresException pg
+                && pg.SqlState == PostgresErrorCodes.UniqueViolation
+                && string.Equals(pg.ConstraintName, "IX_user_username", StringComparison.Ordinal);
+
+        private static string SanitizeForLog(string? value) => value?.ReplaceLineEndings(string.Empty) ?? string.Empty;
     }
 
 

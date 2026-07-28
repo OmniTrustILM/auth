@@ -1,4 +1,5 @@
 ﻿using Czertainly.Auth.Data.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Czertainly.Auth.Data.Repositiories
@@ -7,11 +8,11 @@ namespace Czertainly.Auth.Data.Repositiories
     {
         private AuthDbContext _dbContext;
 
-        private IUserRepository _user;
-        private IRoleRepository _role;
-        private IPermissionRepository _permission;
-        private IResourceRepository _resource;
-        private IActionRepository _action;
+        private IUserRepository? _user;
+        private IRoleRepository? _role;
+        private IPermissionRepository? _permission;
+        private IResourceRepository? _resource;
+        private IActionRepository? _action;
 
         public IUserRepository User
         {
@@ -86,6 +87,11 @@ namespace Czertainly.Auth.Data.Repositiories
         public async Task SaveAsync()
         {
             await _dbContext.SaveChangesAsync();
+        }
+
+        public void Detach(object entity)
+        {
+            _dbContext.Entry(entity).State = EntityState.Detached;
         }
     }
 }
