@@ -1,41 +1,26 @@
 name: Build
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
+    branches: [main*]
   workflow_dispatch:
-  
+
 jobs:
-  check:
-    if: github.event_name != 'push'
-    name: Check
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - name: Build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-        shell: powershell
-        run: |
-          dotnet restore
-          dotnet build --no-restore
-          dotnet test --no-build --verbosity normal
   build:
     if: github.event_name != 'pull_request'
     name: Build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
       - name: Build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-        shell: powershell
-        run: |
-          dotnet restore
-          dotnet build --no-restore
-          dotnet test --no-build --verbosity normal
+        run: dotnet build --no-restore

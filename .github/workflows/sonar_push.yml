@@ -1,0 +1,48 @@
+name: Sonar Main
+
+# Branch analysis of the default branch. This maintains the SonarCloud
+# baseline that the PR analysis chain (check_pr -> dispatch-sonar -> sonar)
+# compares against: without a main-branch analysis the project has no
+# quality-gate reference and no "new code" definition. Push events on main
+# run only repository-owned code, so using SONAR_TOKEN here is safe.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history for accurate SCM blame data
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install SonarCloud scanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"OmniTrustILM-auth" \
+            /o:"ilm" \
+            /s:"$GITHUB_WORKSPACE/SonarQube.Analysis.xml" \
+            /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
+            /d:sonar.qualitygate.wait=true
+          dotnet build
+          dotnet test --no-build --collect:"XPlat Code Coverage;Format=opencover" --results-directory ./coverage
+          dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
