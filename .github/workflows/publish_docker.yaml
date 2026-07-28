@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: publish-${{ github.ref }}-harbor
+  group: publish-${{ github.ref }}-docker
   cancel-in-progress: true
 
 permissions:

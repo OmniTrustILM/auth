@@ -98,6 +98,7 @@ jobs:
             core.setOutput('head_repo',   pr.data.head.repo.full_name);
             core.setOutput('head_branch', pr.data.head.ref);
             core.setOutput('base_ref',    pr.data.base.ref);
+            core.setOutput('run_id',      String(run.data.id));
 
       - name: Export verified context
         # API-sourced, pattern-validated values only (git refs cannot contain
@@ -201,7 +202,7 @@ jobs:
         with:
           name: coverage-report
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.run_id }}
+          run-id: ${{ steps.ctx.outputs.run_id }}
           path: coverage
 
       - name: Install SonarCloud scanner
