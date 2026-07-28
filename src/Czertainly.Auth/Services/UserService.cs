@@ -162,14 +162,16 @@ namespace Czertainly.Auth.Services
                         }
                         catch (DbUpdateException ex) when (IsUsernameUniqueViolation(ex))
                         {
-                            _logger.LogInformation("User '{Username}' was created concurrently; continuing with the existing user", username);
+                            var sanitizedUsername = username.ReplaceLineEndings(string.Empty);
+                            _logger.LogInformation("User '{Username}' was created concurrently; continuing with the existing user", sanitizedUsername);
                             _repositoryManager.Detach(user);
                             user = await _repository.GetByConditionAsync(u => u.Username == username);
                             if (user == null) throw;
                             isNewUser = false;
                         }
                     }
-                    else if (_authOptions.SyncPolicy == SyncPolicy.SyncData)
+
+                    if (!isNewUser && _authOptions.SyncPolicy == SyncPolicy.SyncData)
                     {
                         user.FirstName = authenticationTokenClaims.FirstName;
                         user.LastName = authenticationTokenClaims.LastName;
