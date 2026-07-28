@@ -48,9 +48,6 @@ namespace Czertainly.Auth.Models.Mappings
 
         public static RoleDetailDto ToDetailDto(this Role role)
         {
-            // Users is a navigation collection that is only populated for detail queries - see UserMapper.ToDetailDto.
-            var users = role.Users == null ? null : role.Users.Select(user => user.ToDto()).ToList();
-
             return new RoleDetailDto
             {
                 Uuid = role.Uuid,
@@ -60,7 +57,9 @@ namespace Czertainly.Auth.Models.Mappings
                 Description = role.Description,
                 Email = role.Email,
                 SystemRole = role.SystemRole,
-                Users = users!,
+                // Users is loaded through the repository's detail includes on every path reaching this mapper - see
+                // UserMapper.ToDetailDto for the same reasoning.
+                Users = role.Users?.Select(user => user.ToDto()).ToList() ?? [],
             };
         }
     }

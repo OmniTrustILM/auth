@@ -78,11 +78,6 @@ namespace Czertainly.Auth.Models.Mappings
 
         public static UserDetailDto ToDetailDto(this User user)
         {
-            // Roles is a navigation collection that is only populated for detail queries. A user loaded without the
-            // include keeps the collection unset, and that is propagated instead of being substituted with an empty
-            // list, so the serialized response shape does not change.
-            var roles = user.Roles == null ? null : user.Roles.Select(role => role.ToDto()).ToList();
-
             return new UserDetailDto
             {
                 Uuid = user.Uuid,
@@ -99,7 +94,9 @@ namespace Czertainly.Auth.Models.Mappings
                 Certificate = user.CertificateFingerprint == null
                     ? null
                     : new UserCertificateDto { Uuid = user.CertificateUuid, Fingerprint = user.CertificateFingerprint },
-                Roles = roles!,
+                // Every path reaching this mapper loads Roles through the repository's detail includes, so the coalesce
+                // is unreachable; it keeps the [Required], non-nullable DTO property honest.
+                Roles = user.Roles?.Select(role => role.ToDto()).ToList() ?? [],
             };
         }
     }

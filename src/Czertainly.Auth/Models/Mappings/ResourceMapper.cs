@@ -37,16 +37,15 @@ namespace Czertainly.Auth.Models.Mappings
 
         public static ResourceDetailDto ToDetailDto(this Resource resource)
         {
-            // Actions is a navigation collection that is only populated for detail queries - see UserMapper.ToDetailDto.
-            var actions = resource.Actions == null ? null : resource.Actions.Select(action => action.ToDto()).ToList();
-
             return new ResourceDetailDto
             {
                 Uuid = resource.Uuid,
                 Name = resource.Name,
                 DisplayName = resource.DisplayName,
                 ListObjectsEndpoint = resource.ListObjectsEndpoint,
-                Actions = actions!,
+                // Actions is loaded through the repository's detail includes or an explicit Include on every path
+                // reaching this mapper - see UserMapper.ToDetailDto for the same reasoning.
+                Actions = resource.Actions?.Select(action => action.ToDto()).ToList() ?? [],
             };
         }
     }

@@ -16,7 +16,7 @@ namespace Czertainly.Auth.Common.Services
         protected readonly IBaseRepository<TEntity> _repository;
         protected readonly IRepositoryManager _repositoryManager;
 
-        public CrudService(IRepositoryManager repositoryManager, IBaseRepository<TEntity> repository, IEntityMapper<TEntity, TResponseDto, TDetailResponseDto> mapper, ILogger logger)
+        protected CrudService(IRepositoryManager repositoryManager, IBaseRepository<TEntity> repository, IEntityMapper<TEntity, TResponseDto, TDetailResponseDto> mapper, ILogger logger)
         {
             _mapper = mapper;
             _logger = logger;
@@ -26,12 +26,12 @@ namespace Czertainly.Auth.Common.Services
         public virtual async Task<PagedResponse<TResponseDto>> GetAsync(IQueryRequestDto dto)
         {
             var queryParams = dto.ToQueryStringParameters();
-            var users = await _repository.GetAllAsync(queryParams);
+            var entities = await _repository.GetAllAsync(queryParams);
 
             return new PagedResponse<TResponseDto>
             {
-                Data = users.Select(entity => _mapper.ToDto(entity)).ToList(),
-                Links = users.ToPagingMetadata(),
+                Data = entities.Select(entity => _mapper.ToDto(entity)).ToList(),
+                Links = entities.ToPagingMetadata(),
             };
         }
 

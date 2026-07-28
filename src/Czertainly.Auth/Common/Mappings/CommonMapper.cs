@@ -8,18 +8,22 @@ namespace Czertainly.Auth.Common.Mappings
         /// <summary>
         /// Translates the wire level query request into repository query parameters. A leading '-' in SortBy requests
         /// descending order and the remainder is capitalized, because the sorting is applied through a dynamic
-        /// <c>OrderBy</c> that addresses the entity property by its CLR (PascalCase) name.
+        /// <c>OrderBy</c> that addresses the entity property by its CLR (PascalCase) name. A SortBy that names no
+        /// property at all - null, empty, whitespace, or a bare '-' - yields a null sort field, which the repository
+        /// reads as "do not order".
         /// </summary>
         public static QueryStringParameters ToQueryStringParameters(this IQueryRequestDto dto)
         {
-            var sortBy = dto.SortBy!;
+            var sortBy = dto.SortBy ?? string.Empty;
+            var descending = sortBy.StartsWith('-');
+            var sortField = descending ? sortBy[1..] : sortBy;
 
             return new QueryStringParameters
             {
                 Page = dto.Page,
                 PageSize = dto.PageSize,
-                SortBy = sortBy[0] == '-' ? char.ToUpper(sortBy[1]) + sortBy.Substring(2) : char.ToUpper(sortBy[0]) + sortBy.Substring(1),
-                SortAscending = sortBy[0] != '-',
+                SortBy = string.IsNullOrWhiteSpace(sortField) ? null : char.ToUpper(sortField[0]) + sortField[1..],
+                SortAscending = !descending,
             };
         }
 
