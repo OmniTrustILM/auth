@@ -30,11 +30,6 @@ try
     );
 
     // Add services to the container.
-    builder.Services.AddAutoMapper(cfg =>
-    {
-        cfg.AllowNullCollections = true;
-    }, typeof(Program));
-
     builder.Services.AddControllers()
         .AddJsonOptions(options =>
         {
