@@ -1,0 +1,60 @@
+name: "Check PR"
+on:
+  pull_request:
+    branches: [ main*, feat/*, hotfix/* ]
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}-build-pr
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test with coverage
+        run: dotnet test --no-build --collect:"XPlat Code Coverage;Format=opencover" --results-directory ./coverage
+
+      - name: Ensure coverage-report artifact always exists
+        # upload-artifact excludes hidden (dot-prefixed) files by default, so
+        # the placeholder must be a normal filename or the upload below would
+        # find zero files and fail with if-no-files-found: error.
+        run: |
+          mkdir -p coverage
+          touch coverage/no-coverage-placeholder.txt
+
+      - name: Prepare PR context artifact
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          jq -n --arg pr_number "$PR_NUMBER" --arg head_sha "$HEAD_SHA" --arg head_repo "$HEAD_REPO" \
+             --arg head_branch "$HEAD_BRANCH" --arg base_ref "$BASE_REF" --arg run_id "$RUN_ID" \
+             '{pr_number:$pr_number,head_sha:$head_sha,head_repo:$head_repo,head_branch:$head_branch,base_ref:$base_ref,run_id:$run_id}' \
+             > pr-context.json
+          cat pr-context.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: pr-context, path: pr-context.json, retention-days: 1, if-no-files-found: error }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: coverage-report, path: coverage/, if-no-files-found: error }
