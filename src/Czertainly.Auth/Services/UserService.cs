@@ -7,7 +7,9 @@ using Czertainly.Auth.Data.Contracts;
 using Czertainly.Auth.Models.Config;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -152,8 +154,20 @@ namespace Czertainly.Auth.Services
                         isNewUser = true;
                         _logger.LogInformation("Creating new user with username '{Username}'", username);
                         user = _mapper.Map<User>(authenticationTokenClaims);
+                        user.Username = username;
                         _repository.Create(user);
-                        await _repositoryManager.SaveAsync();
+                        try
+                        {
+                            await _repositoryManager.SaveAsync();
+                        }
+                        catch (DbUpdateException ex) when (IsUsernameUniqueViolation(ex))
+                        {
+                            _logger.LogInformation("User '{Username}' was created concurrently; continuing with the existing user", username);
+                            _repositoryManager.Detach(user);
+                            user = await _repository.GetByConditionAsync(u => u.Username == username);
+                            if (user == null) throw;
+                            isNewUser = false;
+                        }
                     }
                     else if (_authOptions.SyncPolicy == SyncPolicy.SyncData)
                     {
@@ -346,6 +360,11 @@ namespace Czertainly.Auth.Services
 
             return authenticationTokenClaims.Username ?? authenticationTokenClaims.PreferredUsername;
         }
+
+        private static bool IsUsernameUniqueViolation(DbUpdateException ex)
+            => ex.InnerException is PostgresException pg
+                && pg.SqlState == PostgresErrorCodes.UniqueViolation
+                && string.Equals(pg.ConstraintName, "IX_user_username", StringComparison.Ordinal);
     }
 
 

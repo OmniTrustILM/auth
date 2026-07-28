@@ -12,5 +12,6 @@ namespace Czertainly.Auth.Data.Contracts
 
         Task<IDbContextTransaction> BeginTransactionAsync();
         Task SaveAsync();
+        void Detach(object entity);
     }
 }
