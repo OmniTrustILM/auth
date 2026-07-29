@@ -6,24 +6,23 @@ Guidance for agents working in this repository.
 
 | Path | Purpose |
 |------|---------|
-| `src/Czertainly.Auth/Program.cs` | ASP.NET Core entry point: builder/service wiring, middleware pipeline, NLog setup. |
-| `src/Czertainly.Auth/Controllers` | REST API controllers — `UsersController`, `RolesController`, `PermissionsController`, `ResourcesController`, `ActionsController`. |
-| `src/Czertainly.Auth/Services` | Business logic behind the controllers (`UserService`, `RoleService`, `PermissionService`, `ResourceService`, `ActionService`) and their interfaces. |
-| `src/Czertainly.Auth/Data` | `AuthDbContext`; repository contracts (`Data/Contracts`) and implementations (`Data/Repositiories`, sic); EF Core migrations (`Data/Migrations`). |
-| `src/Czertainly.Auth/Models` | DTOs (`Models/Dto`), EF Core entities and fluent configurations (`Models/Entities`, `Models/Entities/Configurations`), hand-written entity/DTO mappers and their `IEntityMapper` adapters (`Models/Mappings`), options classes (`Models/Config`). |
-| `src/Czertainly.Auth/Common` | Cross-cutting concerns: paging/query-filter abstractions (`Common/Data`), domain exceptions plus the global exception middleware (`Common/Exceptions`), model-validation filters (`Common/Filters`), extension methods (`Common/Extensions`), display-name helpers (`Common/Helpers`), shared DTO/entity base types (`Common/Models`), query/paging mappers (`Common/Mappings`), and the generic `CrudService<TEntity, TResponseDto, TDetailResponseDto>` base plus its `IEntityMapper` abstraction (`Common/Services`). |
-| `src/Czertainly.Auth/Properties/launchSettings.json` | Local `dotnet run` launch profiles. |
+| `src/Auth/Program.cs` | ASP.NET Core entry point: builder/service wiring, middleware pipeline, NLog setup. |
+| `src/Auth/Controllers` | REST API controllers — `UsersController`, `RolesController`, `PermissionsController`, `ResourcesController`, `ActionsController`. |
+| `src/Auth/Services` | Business logic behind the controllers (`UserService`, `RoleService`, `PermissionService`, `ResourceService`, `ActionService`) and their interfaces. |
+| `src/Auth/Data` | `AuthDbContext`; repository contracts (`Data/Contracts`) and implementations (`Data/Repositiories`, sic); EF Core migrations (`Data/Migrations`). |
+| `src/Auth/Models` | DTOs (`Models/Dto`), EF Core entities and fluent configurations (`Models/Entities`, `Models/Entities/Configurations`), hand-written entity/DTO mappers and their `IEntityMapper` adapters (`Models/Mappings`), options classes (`Models/Config`). |
+| `src/Auth/Common` | Cross-cutting concerns: paging/query-filter abstractions (`Common/Data`), domain exceptions plus the global exception middleware (`Common/Exceptions`), model-validation filters (`Common/Filters`), extension methods (`Common/Extensions`), display-name helpers (`Common/Helpers`), shared DTO/entity base types (`Common/Models`), query/paging mappers (`Common/Mappings`), and the generic `CrudService<TEntity, TResponseDto, TDetailResponseDto>` base plus its `IEntityMapper` abstraction (`Common/Services`). |
+| `src/Auth/Properties/launchSettings.json` | Local `dotnet run` launch profiles. |
 | `docker/` | Files copied into the runtime image: `entry.sh` (container entrypoint), `update-cacerts.sh`, `static-functions`. |
-| `hooks/` | Legacy Docker Hub automated-build hook scripts (`build`, `post_push`). |
-| `Dockerfile` | Multi-stage build (Alpine-based .NET 9 SDK/ASP.NET images) producing the `czertainly/czertainly-auth` runtime image. |
+| `Dockerfile` | Multi-stage build (Alpine-based .NET 9 SDK/ASP.NET images) producing the `ilm/auth` runtime image. |
 
-There is no test project — `Czertainly.Auth.sln` reserves a `tests` solution folder, but it has no project in it yet.
+There is no test project — `Auth.sln` reserves a `tests` solution folder, but it has no project in it yet.
 
 ## Commands
 
 - Restore: `dotnet restore`
 - Build: `dotnet build --no-restore`
-- Docker image: `docker build -f Dockerfile -t czertainly-auth .`
+- Docker image: `docker build -f Dockerfile -t ilm/auth .`
 
 Run restore + build from the repo root before considering a change done. There is no test project, so there are no unit/integration test commands to run yet.
 
