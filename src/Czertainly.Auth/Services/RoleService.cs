@@ -1,10 +1,10 @@
-﻿using AutoMapper;
-using Czertainly.Auth.Common.Exceptions;
+﻿using Czertainly.Auth.Common.Exceptions;
 using Czertainly.Auth.Common.Models.Dto;
 using Czertainly.Auth.Common.Services;
 using Czertainly.Auth.Data.Contracts;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
+using Czertainly.Auth.Models.Mappings;
 
 namespace Czertainly.Auth.Services
 {
@@ -12,8 +12,8 @@ namespace Czertainly.Auth.Services
     {
         private readonly IPermissionService _permissionService;
 
-        public RoleService(IRepositoryManager repositoryManager, IMapper mapper, ILogger<RoleService> logger, IPermissionService permissionService)
-            : base(repositoryManager, repositoryManager.Role, mapper, logger)
+        public RoleService(IRepositoryManager repositoryManager, ILogger<RoleService> logger, IPermissionService permissionService)
+            : base(repositoryManager, repositoryManager.Role, RoleEntityMapper.Instance, logger)
         {
             _permissionService = permissionService;
         }
@@ -52,7 +52,7 @@ namespace Czertainly.Auth.Services
         public async Task<List<RoleDto>> GetUserRolesAsync(Guid userUuid)
         {
             var roles = await _repositoryManager.Role.GetUserRolesAsync(userUuid);
-            return _mapper.Map<List<RoleDto>>(roles);
+            return roles.Select(role => role.ToDto()).ToList();
         }
 
         public async Task<RoleDetailDto> AssignUsersAsync(Guid roleUuid, IEnumerable<Guid> userUuids)
@@ -64,7 +64,7 @@ namespace Czertainly.Auth.Services
             foreach (var user in users) role.Users.Add(user);
             await _repositoryManager.SaveAsync();
 
-            return _mapper.Map<RoleDetailDto>(role);
+            return role.ToDetailDto();
         }
     }
 }

@@ -1,12 +1,13 @@
-﻿using AutoMapper;
-using Czertainly.Auth.Common.Data;
+﻿using Czertainly.Auth.Common.Data;
 using Czertainly.Auth.Common.Exceptions;
+using Czertainly.Auth.Common.Mappings;
 using Czertainly.Auth.Common.Models.Dto;
 using Czertainly.Auth.Common.Services;
 using Czertainly.Auth.Data.Contracts;
 using Czertainly.Auth.Models.Config;
 using Czertainly.Auth.Models.Dto;
 using Czertainly.Auth.Models.Entities;
+using Czertainly.Auth.Models.Mappings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -21,8 +22,8 @@ namespace Czertainly.Auth.Services
         private readonly IRoleService _roleService;
         private readonly IPermissionService _permissionService;
 
-        public UserService(IRepositoryManager repositoryManager, IMapper mapper, ILogger<UserService> logger, IOptions<AuthOptions> authOptions, IRoleService roleService, IPermissionService permissionService)
-            : base(repositoryManager, repositoryManager.User, mapper, logger)
+        public UserService(IRepositoryManager repositoryManager, ILogger<UserService> logger, IOptions<AuthOptions> authOptions, IRoleService roleService, IPermissionService permissionService)
+            : base(repositoryManager, repositoryManager.User, UserEntityMapper.Instance, logger)
         {
             _authOptions = authOptions.Value;
 
@@ -38,7 +39,7 @@ namespace Czertainly.Auth.Services
                 groupName = queryDto.Group;
             }
 
-            var queryParams = _mapper.Map<QueryStringParameters>(dto);
+            var queryParams = dto.ToQueryStringParameters();
             var users = await _repository.GetAllAsync(queryParams);
             if (groupName != null)
             {
@@ -48,8 +49,8 @@ namespace Czertainly.Auth.Services
 
             return new PagedResponse<UserDto>
             {
-                Data = _mapper.Map<List<UserDto>>(users),
-                Links = _mapper.Map<PagingMetadata>(users),
+                Data = users.Select(user => user.ToDto()).ToList(),
+                Links = users.ToPagingMetadata(),
             };
         }
 
@@ -153,7 +154,7 @@ namespace Czertainly.Auth.Services
                     {
                         isNewUser = true;
                         _logger.LogInformation("Creating new user with username '{Username}'", username);
-                        user = _mapper.Map<User>(authenticationTokenClaims);
+                        user = authenticationTokenClaims.ToEntity();
                         user.Username = username;
                         _repository.Create(user);
                         try
@@ -259,7 +260,7 @@ namespace Czertainly.Auth.Services
                 Authenticated = true,
                 Data = new UserProfileDto
                 {
-                    User = _mapper.Map<UserDto>(user),
+                    User = user.ToDto(),
                     Roles = (user.Roles ?? []).Select(r => new NameAndUuidDto { Uuid = r.Uuid, Name = r.Name }).ToList(),
                     Permissions = permissions,
                 }
@@ -275,7 +276,7 @@ namespace Czertainly.Auth.Services
             user.Enabled = enableFlag;
             await _repositoryManager.SaveAsync();
 
-            return _mapper.Map<UserDetailDto>(user);
+            return user.ToDetailDto();
         }
 
         public async Task<UserDetailDto> AssignRoleAsync(Guid userUuid, Guid roleUuid)
@@ -286,7 +287,7 @@ namespace Czertainly.Auth.Services
             user.Roles.Add(role);
             await _repositoryManager.SaveAsync();
 
-            return _mapper.Map<UserDetailDto>(user);
+            return user.ToDetailDto();
         }
 
         public async Task<UserDetailDto> AssignRolesAsync(Guid userUuid, IEnumerable<Guid> roleUuids)
@@ -298,7 +299,7 @@ namespace Czertainly.Auth.Services
             foreach (var role in roles) user.Roles.Add(role);
             await _repositoryManager.SaveAsync();
 
-            return _mapper.Map<UserDetailDto>(user);
+            return user.ToDetailDto();
         }
 
         public async Task<UserDetailDto> RemoveRoleAsync(Guid userUuid, Guid roleUuid)
@@ -309,7 +310,7 @@ namespace Czertainly.Auth.Services
             user.Roles.Remove(role);
             await _repositoryManager.SaveAsync();
 
-            return _mapper.Map<UserDetailDto>(user);
+            return user.ToDetailDto();
         }
 
         private static X509Certificate2 ParseCertificate(string clientCertificateContent)
@@ -350,7 +351,7 @@ namespace Czertainly.Auth.Services
         public async Task<List<UserDto>> GetRoleUsersAsync(Guid roleUuid)
         {
             var users = await _repositoryManager.User.GetRoleUsersAsync(roleUuid);
-            return _mapper.Map<List<UserDto>>(users);
+            return users.Select(user => user.ToDto()).ToList();
         }
 
         private static string ResolveUsernameFromClaims(AuthenticationTokenClaimsDto authenticationTokenClaims)
