@@ -7,14 +7,16 @@ namespace Czertainly.Auth.Models.Mappings
 {
     public static class ResourceMapper
     {
+        /// <summary>
+        /// A resource create request carries exactly the members an update request carries, so the field list lives in
+        /// <see cref="ApplyTo"/> alone.
+        /// </summary>
         public static Resource ToEntity(this ResourceRequestDto dto)
         {
-            return new Resource
-            {
-                Name = dto.Name!,
-                DisplayName = dto.DisplayName!,
-                ListObjectsEndpoint = dto.ListObjectsEndpoint,
-            };
+            var resource = new Resource();
+            dto.ApplyTo(resource);
+
+            return resource;
         }
 
         public static void ApplyTo(this ResourceRequestDto dto, Resource resource)

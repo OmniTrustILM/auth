@@ -7,13 +7,16 @@ namespace Czertainly.Auth.Models.Mappings
 {
     public static class ActionMapper
     {
+        /// <summary>
+        /// An action create request carries exactly the members an update request carries, so the field list lives in
+        /// <see cref="ApplyTo"/> alone.
+        /// </summary>
         public static ActionEntity ToEntity(this ActionRequestDto dto)
         {
-            return new ActionEntity
-            {
-                Name = dto.Name!,
-                DisplayName = dto.DisplayName!,
-            };
+            var action = new ActionEntity();
+            dto.ApplyTo(action);
+
+            return action;
         }
 
         public static void ApplyTo(this ActionRequestDto dto, ActionEntity action)
