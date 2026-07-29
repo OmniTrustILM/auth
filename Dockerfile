@@ -6,26 +6,25 @@ ARG BUILDPLATFORM
 
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0-alpine AS build
 WORKDIR /
-COPY ["src/Czertainly.Auth/Czertainly.Auth.csproj", "Czertainly.Auth/"]
-RUN dotnet restore "Czertainly.Auth/Czertainly.Auth.csproj"
+COPY ["src/Auth/Auth.csproj", "Auth/"]
+RUN dotnet restore "Auth/Auth.csproj"
 COPY . .
-WORKDIR "/src/Czertainly.Auth"
-RUN dotnet build "Czertainly.Auth.csproj" -c Release -o /app/build
+WORKDIR "/src/Auth"
+RUN dotnet build "Auth.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "Czertainly.Auth.csproj" -c Release -o /app/publish
+RUN dotnet publish "Auth.csproj" -c Release -o /app/publish
 
 FROM base AS final
 
-LABEL org.opencontainers.image.authors="CZERTAINLY <support@czertainly.com>"
+LABEL org.opencontainers.image.authors="ILM <ilm@omnitrust.com>"
 
-RUN addgroup --system --gid 10001 czertainly && adduser --system --home /opt/czertainly --uid 10001 --ingroup czertainly czertainly
-#RUN addgroup --group czertainly --gid 10001 && adduser --uid 10001 --gid 10001 "czertainly" 
+RUN addgroup --system --gid 10001 ilm && adduser --system --home /opt/auth --uid 10001 --ingroup ilm ilm
 
-COPY --from=publish /app/publish /opt/czertainly
-COPY ./docker /opt/czertainly
+COPY --from=publish /app/publish /opt/auth
+COPY ./docker /opt/auth
 
-WORKDIR /opt/czertainly
+WORKDIR /opt/auth
 
 ENV COMPlus_EnableDiagnostics=0
 
@@ -35,4 +34,4 @@ ENV AUTH_CREATE_UNKNOWN_ROLES=false
 
 USER 10001
 
-ENTRYPOINT ["/opt/czertainly/entry.sh"]
+ENTRYPOINT ["/opt/auth/entry.sh"]

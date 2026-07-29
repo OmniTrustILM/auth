@@ -1,6 +1,6 @@
-# CZERTAINLY Auth Service
+# Auth Service
 
-> This repository is part of the commercial open source project CZERTAINLY. You can find more information about the project at [CZERTAINLY](https://github.com/CZERTAINLY/CZERTAINLY) repository, including the contribution guide.
+> This repository is part of the open source project ILM. You can find more information about the project, including the [contribution guide](https://github.com/OmniTrustILM/.github/blob/main/CONTRIBUTING.md), in the [OmniTrustILM](https://github.com/OmniTrustILM) organization.
 
 `Auth` service is designed as a central service for managing access control to different resources and related actions and objects, and identify users based on identification token.
 
@@ -48,11 +48,11 @@ Username is used only for internal identification of system users to elevate per
 ## Authorization
 
 This service does not evaluate permissions.
-The authorization is controlled by the [Open Policy Agent](https://www.openpolicyagent.org/). For more information, refer to [CZERTAINLY Documentation](https://docs.czertainly.com/docs/certificate-key/concept-design/architecture/access-control/overview).
+The authorization is controlled by the [Open Policy Agent](https://www.openpolicyagent.org/). For more information, refer to [ILM Documentation](https://docs.otilm.com/docs/certificate-key/concept-design/architecture/access-control/overview).
 
 ## Docker container
 
-`Auth` service is provided as a Docker container. Use the `czertainly/czertainly-auth:tagname` to pull the required image from the repository. It can be configured using the following environment variables:
+`Auth` service is provided as a Docker container. Use the `hub.omnitrustregistry.com/ilm/auth:tagname` to pull the required image from the repository. It can be configured using the following environment variables:
 
 | Variable                    | Description                                                                                        | Required                                           | Default value |
 |-----------------------------|----------------------------------------------------------------------------------------------------|----------------------------------------------------|---------------|
