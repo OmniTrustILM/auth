@@ -25,10 +25,10 @@ namespace Auth.Models.Entities.Configurations
                     // empty one.
                     groups => groups == null ? String.Empty : String.Join("|", groups.Select(g => $"{g.Uuid}:{g.Name}").ToArray()),
                     v => String.IsNullOrEmpty(v) ? new List<NameAndUuidDto>() : v.Split("|", StringSplitOptions.RemoveEmptyEntries).Select(g => new NameAndUuidDto { Uuid = Guid.Parse(g.Substring(0, g.IndexOf(":"))), Name = g.Substring(g.IndexOf(":") + 1) }).ToList(),
-                    new ValueComparer<List<NameAndUuidDto>>(
+                    new ValueComparer<List<NameAndUuidDto>?>(
                         (c1, c2) => c1 == null ? c2 == null : c2 != null && c1.SequenceEqual(c2),
                         c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
-                        c => c == null ? null! : c.ToList()));
+                        c => c == null ? null : c.ToList()));
 
 
         }

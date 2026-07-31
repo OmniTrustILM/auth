@@ -25,15 +25,29 @@ namespace Auth.Common.Exceptions
             Service = service;
 
             var exceptionList = new List<string>() { exception.Message };
-            if (exception.StackTrace != null) exceptionList.AddRange(exception.StackTrace[6..].Split("\r\n   at "));
+            exceptionList.AddRange(Frames(exception.StackTrace));
             Exception = exceptionList.ToArray();
 
             if(exception.InnerException != null)
             {
                 var innerExceptionList = new List<string>() { exception.InnerException.Message };
-                if (exception.InnerException.StackTrace != null) innerExceptionList.AddRange(exception.InnerException.StackTrace[6..].Split("\r\n   at "));
+                innerExceptionList.AddRange(Frames(exception.InnerException.StackTrace));
                 InnerException = innerExceptionList.ToArray();
             }
+        }
+
+        /// <summary>
+        /// One entry per stack frame, with the "at " prefix dropped. Frames are separated by the line ending of the
+        /// machine that produced the trace, so both are accepted: the service runs on Linux, while a trace captured
+        /// during a Windows development run carries carriage returns.
+        /// </summary>
+        private static IEnumerable<string> Frames(string? stackTrace)
+        {
+            if (stackTrace == null) return [];
+
+            return stackTrace
+                .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(frame => frame.StartsWith("at ", StringComparison.Ordinal) ? frame[3..] : frame);
         }
 
         public override string ToString()
