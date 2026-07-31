@@ -58,7 +58,8 @@ namespace Auth.Services
 
         public async Task<SubjectPermissionsDto> GetUserPermissionsAsync(Guid userUuid)
         {
-            var user = await _repositoryManager.User.GetByKeyAsync(userUuid);
+            // Reading the user first turns an unknown UUID into a not-found response rather than empty permissions.
+            await _repositoryManager.User.GetByKeyAsync(userUuid);
 
             var permissions = await _repository.GetUserPermissions(userUuid);
 
