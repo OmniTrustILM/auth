@@ -24,3 +24,7 @@ jobs:
 
       - name: Build
         run: dotnet build --no-restore
+
+      # Pushes to a main* branch other than main itself get no other test run: sonar_push.yml is scoped to main alone.
+      - name: Test
+        run: dotnet test --no-build
