@@ -47,6 +47,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docker", "docker", "{80B0D0
 		docker\update-cacerts.sh = docker\update-cacerts.sh
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Auth.Tests", "tests\Auth.Tests\Auth.Tests.csproj", "{EDBA404A-EAF4-496B-8169-EE50B01233BE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,6 +59,10 @@ Global
 		{1DE2813C-8588-4968-B4E2-CBDAE238D7A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1DE2813C-8588-4968-B4E2-CBDAE238D7A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1DE2813C-8588-4968-B4E2-CBDAE238D7A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EDBA404A-EAF4-496B-8169-EE50B01233BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EDBA404A-EAF4-496B-8169-EE50B01233BE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EDBA404A-EAF4-496B-8169-EE50B01233BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EDBA404A-EAF4-496B-8169-EE50B01233BE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -67,6 +73,7 @@ Global
 		{2D37E410-375F-4684-AEF7-063D26AFB138} = {6037F6B1-5FBD-4F2B-9B3B-808A60107BE6}
 		{91FD8C66-2B00-4EC0-90E3-8313D27B777C} = {6037F6B1-5FBD-4F2B-9B3B-808A60107BE6}
 		{80B0D075-A806-42CD-8ED4-1EB48620EF28} = {B646B042-A1AA-4C71-A9C1-3D2EF32890C9}
+		{EDBA404A-EAF4-496B-8169-EE50B01233BE} = {58C073A9-BF20-4460-B022-33A593BF9FAF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {5F00BC93-FC67-41A4-BE0C-00E3563A7014}
