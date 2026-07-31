@@ -5,22 +5,33 @@ namespace Auth.Tests.Common;
 
 public class RequestExceptionTests
 {
-    public static TheoryData<RequestException, HttpStatusCode, string> Subclasses => new()
-    {
-        { new EntityNotFoundException("missing"), HttpStatusCode.NotFound, "ENTITY_NOT_FOUND" },
-        { new EntityNotUniqueException("taken"), HttpStatusCode.BadRequest, "ENTITY_NOT_UNIQUE" },
-        { new InvalidActionException("nope"), HttpStatusCode.BadRequest, "INVALID_ACTION" },
-        { new InvalidFormatException("garbled"), HttpStatusCode.BadRequest, "INVALID_FORMAT" },
-        { new UnauthorizedException("denied"), HttpStatusCode.Unauthorized, "UNAUTHORIZED" },
-    };
-
-    [Theory]
-    [MemberData(nameof(Subclasses))]
-    public void EachSubclass_CarriesItsOwnStatusCodeAndCode(RequestException exception, HttpStatusCode statusCode, string code)
+    // One case per subclass rather than a TheoryData of exception instances: an exception is not serializable, so a
+    // theory built from instances cannot enumerate its rows individually in a test explorer (xUnit1045).
+    private static void AssertMapping(RequestException exception, HttpStatusCode statusCode, string code)
     {
         Assert.Equal(statusCode, exception.StatusCode);
         Assert.Equal(code, exception.Code);
     }
+
+    [Fact]
+    public void EntityNotFound_IsReportedAsNotFound()
+        => AssertMapping(new EntityNotFoundException("missing"), HttpStatusCode.NotFound, "ENTITY_NOT_FOUND");
+
+    [Fact]
+    public void EntityNotUnique_IsReportedAsABadRequest()
+        => AssertMapping(new EntityNotUniqueException("taken"), HttpStatusCode.BadRequest, "ENTITY_NOT_UNIQUE");
+
+    [Fact]
+    public void InvalidAction_IsReportedAsABadRequest()
+        => AssertMapping(new InvalidActionException("nope"), HttpStatusCode.BadRequest, "INVALID_ACTION");
+
+    [Fact]
+    public void InvalidFormat_IsReportedAsABadRequest()
+        => AssertMapping(new InvalidFormatException("garbled"), HttpStatusCode.BadRequest, "INVALID_FORMAT");
+
+    [Fact]
+    public void Unauthorized_IsReportedAsUnauthorized()
+        => AssertMapping(new UnauthorizedException("denied"), HttpStatusCode.Unauthorized, "UNAUTHORIZED");
 
     [Fact]
     public void Constructor_KeepsMessageAndInnerException()

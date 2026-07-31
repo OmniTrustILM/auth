@@ -1,19 +1,14 @@
 using Auth.Models.Entities;
-using Auth.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
 
 namespace Auth.Tests.Data;
 
-public class AuthDbContextTests : IDisposable
+public class AuthDbContextTests : SqliteTestBase
 {
-    private readonly SqliteAuthDb _db = new();
-
-    public void Dispose() => _db.Dispose();
-
     [Fact]
     public void Model_MapsEveryEntitySet()
     {
-        using var context = _db.NewContext();
+        using var context = NewContext();
 
         Assert.NotNull(context.Model.FindEntityType(typeof(User)));
         Assert.NotNull(context.Model.FindEntityType(typeof(Role)));
@@ -27,7 +22,7 @@ public class AuthDbContextTests : IDisposable
     {
         var before = DateTimeOffset.UtcNow.AddSeconds(-1);
 
-        await using var context = _db.NewContext();
+        await using var context = NewContext();
         var role = new Role { Name = "stamped" };
         context.Roles.Add(role);
         await context.SaveChangesAsync();
@@ -43,7 +38,7 @@ public class AuthDbContextTests : IDisposable
         DateTimeOffset createdAt;
         DateTimeOffset firstUpdatedAt;
 
-        await using (var context = _db.NewContext())
+        await using (var context = NewContext())
         {
             var role = new Role { Name = "modified" };
             context.Roles.Add(role);
@@ -54,7 +49,7 @@ public class AuthDbContextTests : IDisposable
             firstUpdatedAt = role.UpdatedAt;
         }
 
-        await using (var context = _db.NewContext())
+        await using (var context = NewContext())
         {
             var role = await context.Roles.SingleAsync(r => r.Uuid == roleUuid);
             role.Description = "changed";
@@ -68,7 +63,7 @@ public class AuthDbContextTests : IDisposable
     [Fact]
     public void SaveChanges_StampsSynchronously()
     {
-        using var context = _db.NewContext();
+        using var context = NewContext();
         var role = new Role { Name = "sync-stamped" };
         context.Roles.Add(role);
         context.SaveChanges();
@@ -82,7 +77,7 @@ public class AuthDbContextTests : IDisposable
     {
         Guid actionUuid;
 
-        await using (var context = _db.NewContext())
+        await using (var context = NewContext())
         {
             var action = new Auth.Models.Entities.Action { Name = "revoke", DisplayName = "Revoke" };
             var resource = new Resource
@@ -100,7 +95,7 @@ public class AuthDbContextTests : IDisposable
             actionUuid = action.Uuid;
         }
 
-        await using var reader = _db.NewContext();
+        await using var reader = NewContext();
         var stored = await reader.Actions
             .Include(a => a.Resources)
             .Include(a => a.Permissions)
@@ -113,7 +108,7 @@ public class AuthDbContextTests : IDisposable
     [Fact]
     public async Task SaveChangesAsync_LeavesNonTimestampedEntitiesAlone()
     {
-        await using var context = _db.NewContext();
+        await using var context = NewContext();
         var action = new Auth.Models.Entities.Action { Name = "detail", DisplayName = "Detail" };
         context.Actions.Add(action);
 
