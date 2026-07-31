@@ -53,6 +53,26 @@ public class ErrorDetailsExtendedTests
     }
 
     [Fact]
+    public void InnerException_CarriesTheInnerStackFramesRatherThanLeakingThemIntoTheOuterList()
+    {
+        Exception inner;
+        try
+        {
+            throw new FormatException("inner cause");
+        }
+        catch (Exception caught)
+        {
+            inner = caught;
+        }
+
+        var details = new ErrorDetailsExtended("/auth", "auth", Thrown("outer", inner));
+
+        Assert.NotNull(details.InnerException);
+        Assert.True(details.InnerException.Length > 1);
+        Assert.DoesNotContain(details.Exception, frame => frame.Contains("inner cause", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ToString_SerializesTheExtendedFieldsTogetherWithTheBaseFields()
     {
         var json = new ErrorDetailsExtended("/auth/roles", "auth", Thrown("bad request")).ToString();

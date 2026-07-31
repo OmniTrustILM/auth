@@ -434,19 +434,19 @@ public class UserServiceAuthenticationTests
     }
 
     [Fact]
-    public async Task AuthenticateByClaims_LeavesTheTransactionOpenWhenRoleHandlingReportsUnauthorized()
+    public async Task AuthenticateByClaims_RollsBackWhenRoleHandlingReportsUnauthorized()
     {
-        // The rethrow of an UnauthorizedException skips the rollback that every other failure goes through.
         var options = new AuthOptions { CreateUnknownUsers = true, CreateUnknownRoles = true };
 
-        await Assert.ThrowsAsync<UnauthorizedException>(
+        var exception = await Assert.ThrowsAsync<UnauthorizedException>(
             () => Service(options, new ThrowingRoleService()).AuthenticateUserAsync(new AuthenticationRequestDto
             {
                 AuthenticationTokenUserClaims = Claims(roles: ["admin"]),
             }));
 
+        Assert.Equal("role creation refused", exception.Message);
         var transaction = _manager.SingleTransaction();
-        Assert.False(transaction.RolledBack);
+        Assert.True(transaction.RolledBack);
         Assert.False(transaction.Committed);
     }
 
@@ -497,6 +497,16 @@ public class UserServiceAuthenticationTests
             () => Service().AuthenticateUserAsync(new AuthenticationRequestDto { UserUuid = uuid.ToString() }));
 
         Assert.Equal($"Unknown user for specified UUID: {uuid}", exception.Message);
+    }
+
+    [Fact]
+    public async Task AuthenticateByUuid_RejectsAMalformedUuidAsAClientError()
+    {
+        var exception = await Assert.ThrowsAsync<InvalidFormatException>(
+            () => Service().AuthenticateUserAsync(new AuthenticationRequestDto { UserUuid = "not-a-uuid" }));
+
+        Assert.Equal("INVALID_FORMAT", exception.Code);
+        Assert.Contains("not-a-uuid", exception.Message);
     }
 
     [Fact]

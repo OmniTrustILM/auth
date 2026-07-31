@@ -117,17 +117,6 @@ public class EntityRepositoryTests : SqliteTestBase
         Assert.All(map.Values, action => Assert.Equal(EntityState.Unchanged, context.Entry(action).State));
     }
 
-    [Fact]
-    public async Task ActionRepository_CannotLookUpAnActionByName()
-    {
-        // The lookup compares with an explicit StringComparison, which the provider cannot translate. Nothing calls it.
-        await SeedResources();
-
-        await using var context = NewContext();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new ActionRepository(context).GetActionByNameAsync("list"));
-    }
-
     private async Task SeedResources()
         => await Seed(context =>
         {

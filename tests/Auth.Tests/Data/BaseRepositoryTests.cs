@@ -214,19 +214,6 @@ public class BaseRepositoryTests : SqliteTestBase
     }
 
     [Fact]
-    public async Task GetDictionaryMap_IgnoresTheFilterItIsGiven()
-    {
-        // The filtered query is built and then discarded, so every row comes back regardless of the predicate. No
-        // caller passes one today.
-        await SeedActions("list", "detail");
-
-        await using var context = NewContext();
-        var map = await new ActionRepository(context).GetDictionaryMap(a => a.Name, a => a.Name == "list");
-
-        Assert.Equal(2, map.Count);
-    }
-
-    [Fact]
     public async Task Create_PersistsOnceTheContextIsSaved()
     {
         await using var context = NewContext();

@@ -30,9 +30,6 @@ public sealed class FakeResourceRepository : FakeRepository<Resource>, IResource
 
 public sealed class FakeActionRepository : FakeRepository<ActionEntity>, IActionRepository
 {
-    public Task<ActionEntity?> GetActionByNameAsync(string actionName)
-        => Task.FromResult(Stored.FirstOrDefault(a => string.Equals(a.Name, actionName, StringComparison.Ordinal)));
-
     public Task<Dictionary<TKey, ActionEntity>> GetActionsMapAsync<TKey>(Func<ActionEntity, TKey> keySelector) where TKey : notnull
         => Task.FromResult(Stored.ToDictionary(keySelector));
 }
