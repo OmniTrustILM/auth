@@ -40,12 +40,13 @@ namespace Auth.Services
             }
 
             var queryParams = dto.ToQueryStringParameters();
-            var users = await _repository.GetAllAsync(queryParams);
-            if (groupName != null)
-            {
-                var filteredUsers = users.Where(u => u.Groups != null && u.Groups.Count > 0 && u.Groups.Exists(g => g.Name.Equals(groupName))).ToList();
-                users = PagedList<User>.CreateFromFullList(filteredUsers, queryParams.Page, queryParams.PageSize);
-            }
+
+            // A group filter is applied to the whole result and paged here, because filtering a page that the query
+            // already narrowed would drop matches beyond it and report the page's count as the total.
+            var users = groupName == null
+                ? await _repository.GetAllAsync(queryParams)
+                : PagedList<User>.CreateFromFullList(
+                    await _repositoryManager.User.GetGroupMembersAsync(groupName, queryParams), queryParams.Page, queryParams.PageSize);
 
             return new PagedResponse<UserDto>
             {
