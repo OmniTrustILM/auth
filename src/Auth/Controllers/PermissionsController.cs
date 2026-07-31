@@ -66,9 +66,9 @@ namespace Auth.Controllers
         }
 
         [HttpDelete("roles/{roleUuid}/permissions/{resourceUuid}/objects/{objectUuid}")]
-        public ActionResult DeleteRoleObjectPermissions([FromRoute] Guid roleUuid, [FromRoute] Guid resourceUuid, [FromRoute] Guid objectUuid)
+        public async Task<ActionResult> DeleteRoleObjectPermissions([FromRoute] Guid roleUuid, [FromRoute] Guid resourceUuid, [FromRoute] Guid objectUuid)
         {
-            _permissionService.DeleteRoleObjectPermissionsAsync(roleUuid, resourceUuid, objectUuid);
+            await _permissionService.DeleteRoleObjectPermissionsAsync(roleUuid, resourceUuid, objectUuid);
 
             return NoContent();
         }

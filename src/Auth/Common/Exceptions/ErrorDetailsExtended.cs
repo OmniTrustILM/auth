@@ -31,7 +31,7 @@ namespace Auth.Common.Exceptions
             if(exception.InnerException != null)
             {
                 var innerExceptionList = new List<string>() { exception.InnerException.Message };
-                if (exception.InnerException.StackTrace != null) exceptionList.AddRange(exception.InnerException.StackTrace[6..].Split("\r\n   at "));
+                if (exception.InnerException.StackTrace != null) innerExceptionList.AddRange(exception.InnerException.StackTrace[6..].Split("\r\n   at "));
                 InnerException = innerExceptionList.ToArray();
             }
         }
