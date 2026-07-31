@@ -58,10 +58,8 @@ public class UserServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_GroupFilterAppliesToOneRepositoryPageAndIsThenPagedAgain()
+    public async Task GetAsync_PagesTheWholeFilteredResult()
     {
-        // The repository pages first and the group filter runs over that page alone, so a request past the first page
-        // comes back empty and the reported count describes the filtered page rather than the filtered set.
         _manager.UserRepository.Seed(
             User("jack", groups: [Group("operators")]),
             User("jane", groups: [Group("operators")]),
@@ -70,9 +68,25 @@ public class UserServiceTests
         var page = await ServiceFactory.User(_manager)
             .GetAsync(new UserQueryRequestDto { Group = "operators", Page = 2, PageSize = 2, SortBy = "username" });
 
-        Assert.Empty(page.Data);
-        Assert.Equal(1, page.Links.TotalCount);
+        Assert.Equal(["john"], page.Data.Select(u => u.Username));
+        Assert.Equal(3, page.Links.TotalCount);
+        Assert.Equal(2, page.Links.TotalPages);
         Assert.True(page.Links.HasPrevious);
+        Assert.False(page.Links.HasNext);
+    }
+
+    [Fact]
+    public async Task GetAsync_CountsOnlyGroupMembers_NotEveryUser()
+    {
+        _manager.UserRepository.Seed(
+            User("jane", groups: [Group("operators")]),
+            User("john", groups: [Group("auditors")]),
+            User("jack", groups: null));
+
+        var page = await ServiceFactory.User(_manager).GetAsync(new UserQueryRequestDto { Group = "operators" });
+
+        Assert.Equal(["jane"], page.Data.Select(u => u.Username));
+        Assert.Equal(1, page.Links.TotalCount);
     }
 
     [Fact]

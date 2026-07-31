@@ -1,3 +1,5 @@
+using Auth.Common.Data;
+using Auth.Common.Models.Dto;
 using Auth.Data.Repositiories;
 using Auth.Models.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +39,42 @@ public class EntityRepositoryTests : SqliteTestBase
         await using var context = NewContext();
 
         Assert.Empty(await new UserRepository(context).GetRoleUsersAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task UserRepository_ReturnsEveryGroupMemberSortedAndUnpaged()
+    {
+        await Seed(context =>
+        {
+            context.Users.AddRange(
+                new User { Username = "john", Groups = [new NameAndUuidDto { Uuid = Guid.NewGuid(), Name = "operators" }] },
+                new User { Username = "jack", Groups = [new NameAndUuidDto { Uuid = Guid.NewGuid(), Name = "operators" }] },
+                new User { Username = "jane", Groups = [new NameAndUuidDto { Uuid = Guid.NewGuid(), Name = "auditors" }] },
+                new User { Username = "jill", Groups = [] });
+
+            return Task.CompletedTask;
+        });
+
+        await using var context = NewContext();
+        var members = await new UserRepository(context).GetGroupMembersAsync(
+            "operators",
+            new QueryStringParameters { SortBy = nameof(User.Username), SortAscending = true, PageSize = 1 });
+
+        Assert.Equal(["jack", "john"], members.Select(u => u.Username));
+    }
+
+    [Fact]
+    public async Task UserRepository_ReturnsNoGroupMembersForAnUnknownGroup()
+    {
+        await Seed(context =>
+        {
+            context.Users.Add(new User { Username = "jane", Groups = [new NameAndUuidDto { Uuid = Guid.NewGuid(), Name = "operators" }] });
+            return Task.CompletedTask;
+        });
+
+        await using var context = NewContext();
+
+        Assert.Empty(await new UserRepository(context).GetGroupMembersAsync("nosuch", new QueryStringParameters()));
     }
 
     [Fact]

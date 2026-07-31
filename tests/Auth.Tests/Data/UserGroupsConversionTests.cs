@@ -53,20 +53,17 @@ public class UserGroupsConversionTests : SqliteTestBase
     }
 
     [Fact]
-    public async Task AnEmptyGroupListIsStoredAsNothingAndComesBackAsNoListAtAll()
+    public async Task AnEmptyGroupListComesBackEmptyRatherThanAbsent()
     {
-        // An empty list converts to a null column value, and a null column value bypasses the conversion on the way
-        // back, so the empty list the write started from is not what the read returns.
         var stored = await RoundTrip([]);
 
-        Assert.Null(stored.Groups);
+        Assert.NotNull(stored.Groups);
+        Assert.Empty(stored.Groups);
     }
 
     [Fact]
-    public async Task AUserWhoseGroupsCameBackAsNoList_CanStillBeSavedAgain()
+    public async Task AnEmptyGroupListStaysEmptyAcrossALaterEdit()
     {
-        // The conversion is skipped for a null value in both directions, so the null-unsafe list access in the
-        // converter is never reached and a later edit of the same row succeeds.
         Guid uuid = default;
         await Seed(context =>
         {
@@ -87,7 +84,31 @@ public class UserGroupsConversionTests : SqliteTestBase
         await using var reader = NewContext();
         var stored = await reader.Users.SingleAsync(u => u.Uuid == uuid);
         Assert.Equal("any other edit", stored.Description);
-        Assert.Null(stored.Groups);
+        Assert.Empty(stored.Groups!);
+    }
+
+    [Fact]
+    public async Task GroupsCanBeClearedOnAStoredUser()
+    {
+        Guid uuid = default;
+        await Seed(context =>
+        {
+            var user = new User { Username = "jane", Groups = [Group("operators")] };
+            context.Users.Add(user);
+            uuid = user.Uuid;
+
+            return Task.CompletedTask;
+        });
+
+        await using (var context = NewContext())
+        {
+            var user = await context.Users.SingleAsync(u => u.Uuid == uuid);
+            user.Groups = [];
+            await context.SaveChangesAsync();
+        }
+
+        await using var reader = NewContext();
+        Assert.Empty((await reader.Users.SingleAsync(u => u.Uuid == uuid)).Groups!);
     }
 
     [Fact]
