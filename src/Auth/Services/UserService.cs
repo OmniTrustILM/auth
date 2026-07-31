@@ -40,12 +40,13 @@ namespace Auth.Services
             }
 
             var queryParams = dto.ToQueryStringParameters();
-            var users = await _repository.GetAllAsync(queryParams);
-            if (groupName != null)
-            {
-                var filteredUsers = users.Where(u => u.Groups != null && u.Groups.Count > 0 && u.Groups.Exists(g => g.Name.Equals(groupName))).ToList();
-                users = PagedList<User>.CreateFromFullList(filteredUsers, queryParams.Page, queryParams.PageSize);
-            }
+
+            // A group filter is applied to the whole result and paged here, because filtering a page that the query
+            // already narrowed would drop matches beyond it and report the page's count as the total.
+            var users = groupName == null
+                ? await _repository.GetAllAsync(queryParams)
+                : PagedList<User>.CreateFromFullList(
+                    await _repositoryManager.User.GetGroupMembersAsync(groupName, queryParams), queryParams.Page, queryParams.PageSize);
 
             return new PagedResponse<UserDto>
             {
@@ -221,7 +222,11 @@ namespace Auth.Services
                         }
                     }
                 }
-                catch (UnauthorizedException) { throw; }
+                catch (UnauthorizedException)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
@@ -240,7 +245,15 @@ namespace Auth.Services
             else if (!string.IsNullOrEmpty(authenticationRequestDto.UserUuid))
             {
                 _logger.LogDebug("Authenticating user with UUID '{UserUuid}'", SanitizeForLog(authenticationRequestDto.UserUuid));
-                user = await _repository.GetByConditionAsync(u => u.Uuid == Guid.Parse(authenticationRequestDto.UserUuid));
+
+                // Parsing up front keeps a malformed UUID a client error; parsing inside the predicate makes it an
+                // unhandled failure while the query is being built.
+                if (!Guid.TryParse(authenticationRequestDto.UserUuid, out var requestedUserUuid))
+                {
+                    throw new InvalidFormatException($"Wrong format of user UUID: {SanitizeForLog(authenticationRequestDto.UserUuid)}");
+                }
+
+                user = await _repository.GetByConditionAsync(u => u.Uuid == requestedUserUuid);
 
                 if (user == null) throw new UnauthorizedException("Unknown user for specified UUID: " + authenticationRequestDto.UserUuid);
             }

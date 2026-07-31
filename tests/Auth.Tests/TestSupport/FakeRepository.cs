@@ -68,12 +68,8 @@ public class FakeRepository<TEntity> : IBaseRepository<TEntity>
         return Task.FromResult<IEnumerable<TEntity>>(_stored.Where(e => wanted.Contains(e.Uuid)).ToList());
     }
 
-    public Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector, Expression<Func<TEntity, bool>>? expression = null)
-        where TKey : notnull
-    {
-        var source = expression == null ? _stored : _stored.Where(expression.Compile());
-        return Task.FromResult(source.ToDictionary(keySelector));
-    }
+    public Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector) where TKey : notnull
+        => Task.FromResult(_stored.ToDictionary(keySelector));
 
     public void Create(TEntity entity) => _stagedCreates.Add(entity);
 

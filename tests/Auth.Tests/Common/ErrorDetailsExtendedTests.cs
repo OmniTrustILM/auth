@@ -53,6 +53,26 @@ public class ErrorDetailsExtendedTests
     }
 
     [Fact]
+    public void InnerException_CarriesTheInnerStackFramesRatherThanLeakingThemIntoTheOuterList()
+    {
+        Exception inner;
+        try
+        {
+            throw new FormatException("inner cause");
+        }
+        catch (Exception caught)
+        {
+            inner = caught;
+        }
+
+        var details = new ErrorDetailsExtended("/auth", "auth", Thrown("outer", inner));
+
+        Assert.NotNull(details.InnerException);
+        Assert.True(details.InnerException.Length > 1);
+        Assert.DoesNotContain(details.Exception, frame => frame.Contains("inner cause", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ToString_SerializesTheExtendedFieldsTogetherWithTheBaseFields()
     {
         var json = new ErrorDetailsExtended("/auth/roles", "auth", Thrown("bad request")).ToString();
@@ -70,5 +90,45 @@ public class ErrorDetailsExtendedTests
         var details = new ErrorDetailsExtended("/auth", "auth", new UnauthorizedException("never thrown"));
 
         Assert.Equal(["never thrown"], details.Exception);
+    }
+
+    [Theory]
+    [InlineData("   at First()\n   at Second()\n   at Third()")]
+    [InlineData("   at First()\r\n   at Second()\r\n   at Third()")]
+    public void Frames_AreSplitWhicheverLineEndingTheTraceCarries(string stackTrace)
+    {
+        // The service runs on Linux, so a trace separated by bare newlines is the production case; a Windows
+        // development run produces the other.
+        var details = new ErrorDetailsExtended("/auth", "auth", new TracedException("boom", stackTrace));
+
+        Assert.Equal(["boom", "First()", "Second()", "Third()"], details.Exception);
+    }
+
+    [Fact]
+    public void Frames_OfTheInnerExceptionStayOutOfTheOuterList()
+    {
+        var inner = new TracedException("inner cause", "   at InnerFrame()");
+        var details = new ErrorDetailsExtended("/auth", "auth", new TracedException("outer", "   at OuterFrame()", inner));
+
+        Assert.Equal(["outer", "OuterFrame()"], details.Exception);
+        Assert.NotNull(details.InnerException);
+        Assert.Equal(["inner cause", "InnerFrame()"], details.InnerException);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("abc")]
+    public void AStackTraceTooShortToCarryAFramePrefix_IsNotARangeError(string stackTrace)
+    {
+        var details = new ErrorDetailsExtended("/auth", "auth", new TracedException("boom", stackTrace));
+
+        Assert.Equal("boom", details.Exception[0]);
+    }
+
+    private sealed class TracedException(string message, string stackTrace, Exception? innerException = null)
+        : Exception(message, innerException)
+    {
+        public override string? StackTrace { get; } = stackTrace;
     }
 }

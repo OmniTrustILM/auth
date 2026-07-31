@@ -1,3 +1,5 @@
+using Auth.Common.Data;
+using Auth.Common.Extensions;
 using Auth.Data.Contracts;
 using Auth.Models.Entities;
 using ActionEntity = Auth.Models.Entities.Action;
@@ -8,6 +10,14 @@ public sealed class FakeUserRepository : FakeRepository<User>, IUserRepository
 {
     public Task<IEnumerable<User>> GetRoleUsersAsync(Guid roleUuid)
         => Task.FromResult<IEnumerable<User>>(Stored.Where(u => u.Roles != null && u.Roles.Any(r => r.Uuid == roleUuid)).ToList());
+
+    public Task<List<User>> GetGroupMembersAsync(string groupName, QueryStringParameters parameters)
+    {
+        var query = Stored.AsQueryable();
+        if (parameters.SortBy != null) query = query.OrderBy(parameters.SortBy, parameters.SortAscending);
+
+        return Task.FromResult(query.Where(u => u.Groups != null && u.Groups.Exists(g => g.Name.Equals(groupName))).ToList());
+    }
 }
 
 public sealed class FakeRoleRepository : FakeRepository<Role>, IRoleRepository
@@ -30,9 +40,6 @@ public sealed class FakeResourceRepository : FakeRepository<Resource>, IResource
 
 public sealed class FakeActionRepository : FakeRepository<ActionEntity>, IActionRepository
 {
-    public Task<ActionEntity?> GetActionByNameAsync(string actionName)
-        => Task.FromResult(Stored.FirstOrDefault(a => string.Equals(a.Name, actionName, StringComparison.Ordinal)));
-
     public Task<Dictionary<TKey, ActionEntity>> GetActionsMapAsync<TKey>(Func<ActionEntity, TKey> keySelector) where TKey : notnull
         => Task.FromResult(Stored.ToDictionary(keySelector));
 }

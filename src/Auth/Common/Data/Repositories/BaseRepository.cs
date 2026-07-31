@@ -71,11 +71,9 @@ namespace Auth.Common.Data.Repositories
             return await _dbSet.Where(e => uuids.Contains(e.Uuid)).ToListAsync();
         }
 
-        public async Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector, Expression<Func<TEntity, bool>>? expression = null) where TKey : notnull
+        public async Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector) where TKey : notnull
         {
-            var context = _dbSet;
-            if (expression != null) context.Where(expression);
-            return await context.ToDictionaryAsync(keySelector);
+            return await _dbSet.ToDictionaryAsync(keySelector);
         }
 
         #region CRUD operations

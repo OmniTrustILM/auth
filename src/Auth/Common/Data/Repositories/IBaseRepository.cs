@@ -15,7 +15,7 @@ namespace Auth.Common.Data.Repositories
         Task<TEntity> GetByKeyAsync(Guid entityKey);
         Task<TEntity?> GetByConditionAsync(Expression<Func<TEntity, bool>> expression);
         Task<IEnumerable<TEntity>> GetByUuidsAsync(IEnumerable<Guid> uuids);
-        public Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector, Expression<Func<TEntity, bool>>? expression = null) where TKey : notnull;
+        Task<Dictionary<TKey, TEntity>> GetDictionaryMap<TKey>(Func<TEntity, TKey> keySelector) where TKey : notnull;
 
         void Create(TEntity entity);
         Task UpdateAsync(Guid entityKey, TEntity entity);

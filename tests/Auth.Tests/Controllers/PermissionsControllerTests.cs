@@ -83,28 +83,26 @@ public class PermissionsControllerTests
     }
 
     [Fact]
-    public void DeleteRoleObjectPermissions_ForwardsTheIdentifiers()
+    public async Task DeleteRoleObjectPermissions_ForwardsTheIdentifiers()
     {
         var roleUuid = Guid.NewGuid();
         var resourceUuid = Guid.NewGuid();
         var objectUuid = Guid.NewGuid();
 
-        Assert.IsType<NoContentResult>(Controller().DeleteRoleObjectPermissions(roleUuid, resourceUuid, objectUuid));
+        Assert.IsType<NoContentResult>(await Controller().DeleteRoleObjectPermissions(roleUuid, resourceUuid, objectUuid));
 
         Assert.Equal((roleUuid, resourceUuid, objectUuid), Assert.Single(_permissions.DeletedObjectPermissions));
     }
 
     [Fact]
-    public void DeleteRoleObjectPermissions_AnswersBeforeTheDeleteHasRun()
+    public void DeleteRoleObjectPermissions_DoesNotAnswerUntilTheDeleteHasRun()
     {
-        // The action is not awaited, so the response is sent whether or not the delete ever completes, and a failure in
-        // it cannot reach the caller.
         var neverCompletes = new NeverCompletingPermissionService();
 
-        Assert.IsType<NoContentResult>(new PermissionsController(neverCompletes)
-            .DeleteRoleObjectPermissions(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+        var pending = new PermissionsController(neverCompletes)
+            .DeleteRoleObjectPermissions(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
-        Assert.False(neverCompletes.DeleteCompleted);
+        Assert.False(pending.IsCompleted);
     }
 
     [Fact]
