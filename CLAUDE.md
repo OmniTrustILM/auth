@@ -43,8 +43,7 @@ Run restore + build from the repo root before considering a change done. There i
 ## Quality gates
 
 - **SonarCloud** — project key `OmniTrustILM-auth`, organization `ilm`
-  (verified live against the SonarCloud API; the older `CZERTAINLY_CZERTAINLY-Auth`
-  key from the pre-rename org no longer resolves). SonarScanner for .NET does
+  (verified live against the SonarCloud API). SonarScanner for .NET does
   **not** read `sonar-project.properties` — configuration instead lives in
   three places, split by what it is:
   - **Scan-scope settings** (host URL, coverage-report path, coverage
