@@ -434,6 +434,28 @@ public class UserServiceAuthenticationTests
     }
 
     [Fact]
+    public async Task AuthenticateByClaims_RefusesARoleClaimPairedWithASystemUser()
+    {
+        var systemUser = User("acme", systemUser: true);
+        var pairedRole = new Role { Name = "acme", SystemRole = true, Users = [systemUser] };
+        systemUser.Roles.Add(pairedRole);
+        var jane = User("jane");
+        _manager.UserRepository.Seed(systemUser, jane);
+        _manager.RoleRepository.Seed(pairedRole);
+
+        var exception = await Assert.ThrowsAsync<UnauthorizedException>(
+            () => Service(new AuthOptions { SyncPolicy = SyncPolicy.SyncData }).AuthenticateUserAsync(
+                new AuthenticationRequestDto { AuthenticationTokenUserClaims = Claims(roles: ["acme"]) }));
+
+        Assert.Equal("Error in creating user or assigning roles based on authentication token.", exception.Message);
+        Assert.IsType<InvalidActionException>(exception.InnerException);
+        Assert.Empty(jane.Roles);
+        var transaction = _manager.SingleTransaction();
+        Assert.True(transaction.RolledBack);
+        Assert.False(transaction.Committed);
+    }
+
+    [Fact]
     public async Task AuthenticateByClaims_RollsBackWhenRoleHandlingReportsUnauthorized()
     {
         var options = new AuthOptions { CreateUnknownUsers = true, CreateUnknownRoles = true };

@@ -159,6 +159,144 @@ public class RoleServiceTests
         Assert.Empty(updated.Users);
     }
 
+    private Role SeedPairedRole(out User systemUser)
+    {
+        systemUser = new User { Username = "acme", SystemUser = true };
+        var role = Role("acme", systemRole: true);
+        role.Users = [systemUser];
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(systemUser);
+        return role;
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_PairsANewSystemUserWithItsNewRole()
+    {
+        var role = Role("acme", systemRole: true);
+        var systemUser = new User { Username = "acme", SystemUser = true, Roles = [] };
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(systemUser);
+
+        var updated = await ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid]);
+
+        Assert.Equal("acme", Assert.Single(updated.Users).Username);
+        Assert.Equal(1, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesAHumanAlongsideAFirstPairing()
+    {
+        var role = Role("acme", systemRole: true);
+        var systemUser = new User { Username = "acme", SystemUser = true, Roles = [] };
+        var jane = new User { Username = "jane" };
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(systemUser, jane);
+
+        await Assert.ThrowsAsync<InvalidActionException>(
+            () => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid, jane.Uuid]));
+
+        Assert.Empty(role.Users);
+        Assert.Equal(0, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesTwoSystemUsersInAFirstPairing()
+    {
+        var role = Role("acme", systemRole: true);
+        var acme = new User { Username = "acme", SystemUser = true, Roles = [] };
+        var scep = new User { Username = "scep", SystemUser = true, Roles = [] };
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(acme, scep);
+
+        await Assert.ThrowsAsync<InvalidActionException>(
+            () => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [acme.Uuid, scep.Uuid]));
+
+        Assert.Empty(role.Users);
+        Assert.Equal(0, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesASystemUserThatAlreadyHoldsARoleOnAnEmptySystemRole()
+    {
+        var role = Role("other", systemRole: true);
+        var systemUser = new User { Username = "acme", SystemUser = true, Roles = [Role("acme", systemRole: true)] };
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(systemUser);
+
+        await Assert.ThrowsAsync<InvalidActionException>(() => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid]));
+
+        Assert.Empty(role.Users);
+        Assert.Equal(0, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesAHumanOnARolePairedWithASystemUser()
+    {
+        var role = SeedPairedRole(out var systemUser);
+        var jane = new User { Username = "jane" };
+        _manager.UserRepository.Seed(jane);
+
+        var exception = await Assert.ThrowsAsync<InvalidActionException>(
+            () => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid, jane.Uuid]));
+
+        Assert.Equal("Role 'acme' belongs to a system user and cannot be assigned to user 'jane'.", exception.Message);
+        Assert.Equal([systemUser], role.Users);
+        Assert.Equal(0, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesToDetachTheSystemUserFromItsRole()
+    {
+        var role = SeedPairedRole(out _);
+
+        var exception = await Assert.ThrowsAsync<InvalidActionException>(
+            () => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, []));
+
+        Assert.Equal("Role 'acme' belongs to system user 'acme', which cannot be removed from it.", exception.Message);
+        Assert.Single(role.Users);
+        Assert.Equal(0, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_RefusesASystemUserOnAnotherRole()
+    {
+        var role = Role("admin");
+        var systemUser = new User { Username = "acme", SystemUser = true };
+        _manager.RoleRepository.Seed(role);
+        _manager.UserRepository.Seed(systemUser);
+
+        var exception = await Assert.ThrowsAsync<InvalidActionException>(
+            () => ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid]));
+
+        Assert.Equal("System user 'acme' holds only its own role and cannot be added to role 'admin'.", exception.Message);
+        Assert.Empty(role.Users);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_AllowsAReplacementThatKeepsTheSystemUser()
+    {
+        var role = SeedPairedRole(out var systemUser);
+
+        var updated = await ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid]);
+
+        Assert.Equal("acme", Assert.Single(updated.Users).Username);
+        Assert.Equal(1, _manager.SaveCount);
+    }
+
+    [Fact]
+    public async Task AssignUsersAsync_AllowsAReplacementThatKeepsAnExistingHumanMember()
+    {
+        var role = SeedPairedRole(out var systemUser);
+        var jane = new User { Username = "jane" };
+        role.Users.Add(jane);
+        _manager.UserRepository.Seed(jane);
+
+        var updated = await ServiceFactory.Role(_manager, _permissions).AssignUsersAsync(role.Uuid, [systemUser.Uuid, jane.Uuid]);
+
+        Assert.Equal(["acme", "jane"], updated.Users.Select(u => u.Username).Order());
+        Assert.Equal(1, _manager.SaveCount);
+    }
+
     [Fact]
     public async Task AssignUsersAsync_ReportsAnUnknownRoleAsNotFound()
     {

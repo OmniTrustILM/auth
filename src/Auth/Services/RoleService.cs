@@ -55,10 +55,22 @@ namespace Auth.Services
             return roles.Select(role => role.ToDto()).ToList();
         }
 
+        /// <summary>
+        /// Replaces the members of the role. A system user cannot be left out of the role it is paired with, and the
+        /// role takes no other members.
+        /// </summary>
         public async Task<RoleDetailDto> AssignUsersAsync(Guid roleUuid, IEnumerable<Guid> userUuids)
         {
             var role = await _repository.GetByKeyAsync(roleUuid);
-            var users = await _repositoryManager.User.GetByUuidsAsync(userUuids);
+            var users = (await _repositoryManager.User.GetByUuidsAsync(userUuids)).ToList();
+
+            // GetByUuidsAsync does not load user roles, which the first-pairing check needs for a system user.
+            for (var i = 0; i < users.Count; i++)
+            {
+                if (users[i].SystemUser) users[i] = await _repositoryManager.User.GetByKeyAsync(users[i].Uuid);
+            }
+
+            SystemMembershipGuard.CheckMembersReplaceable(role, users);
 
             role.Users.Clear();
             foreach (var user in users) role.Users.Add(user);
