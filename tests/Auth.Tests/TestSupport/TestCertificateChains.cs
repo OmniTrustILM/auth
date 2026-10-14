@@ -5,7 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace Auth.Tests.TestSupport;
 
-/// <summary>Fresh public test chains without AIA/CRL URLs or host trust-store writes.</summary>
+/// <summary>Fresh public test chains with optional loopback AIA and no host trust-store writes.</summary>
 public sealed class TestCertificateChains : IDisposable
 {
     private readonly List<X509Certificate2> _owned = [];
@@ -41,9 +41,11 @@ public sealed class TestCertificateChains : IDisposable
         return certificate;
     }
 
-    private static CertificateRequest Request(string subject, RSA key, bool ca, int padding = 0)
+    private static CertificateRequest Request(string subject, RSA key, bool ca, int padding = 0, X500DistinguishedName? subjectName = null)
     {
-        var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var request = subjectName == null
+            ? new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            : new CertificateRequest(subjectName, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(ca, false, 0, true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(ca
             ? X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign : X509KeyUsageFlags.DigitalSignature, true));
@@ -59,13 +61,16 @@ public sealed class TestCertificateChains : IDisposable
     }
 
     public X509Certificate2 Issue(string subject, RSA key, X509Certificate2 issuer, bool ca,
-        DateTimeOffset? before = null, DateTimeOffset? after = null, int padding = 0, byte[]? extension = null)
+        DateTimeOffset? before = null, DateTimeOffset? after = null, int padding = 0, byte[]? extension = null,
+        X500DistinguishedName? subjectName = null, byte[]? authorityInformationAccess = null)
     {
         var serial = RandomNumberGenerator.GetBytes(16);
         // A positive, nonzero leading byte gives exact-size fixtures a stable DER INTEGER length.
         serial[0] = 1;
-        var request = Request(subject, key, ca, padding);
+        var request = Request(subject, key, ca, padding, subjectName);
         if (extension != null) request.CertificateExtensions.Add(new X509Extension("1.3.6.1.4.1.55555.2", extension, false));
+        if (authorityInformationAccess != null)
+            request.CertificateExtensions.Add(new X509Extension("1.3.6.1.5.5.7.1.1", authorityInformationAccess, false));
         using var publicCertificate = request.Create(issuer,
             before ?? DateTimeOffset.UtcNow.AddYears(-1), after ?? DateTimeOffset.UtcNow.AddYears(1), serial);
         return Own(publicCertificate.CopyWithPrivateKey(key));

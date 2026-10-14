@@ -5,6 +5,8 @@ using System.Text;
 using System.Formats.Asn1;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Auth.Tests.Services;
 
@@ -30,6 +32,21 @@ public sealed class ClientCertificateValidatorTests : IDisposable
             {
                 Assert.Equal(File.ReadAllText(Path.Combine(directory, "leaf-fingerprint.txt")), Validator().Validate(leaf, [intermediate]));
                 Assert.Equal(File.ReadAllText(Path.Combine(directory, "general-string-fingerprint.txt")), Validator().Validate(extendedLeaf, [intermediate]));
+                foreach (var value in new[] { "direct-leaf.txt", "direct-leaf-pem.txt" })
+                {
+                    var directLeaf = File.ReadAllText(Path.Combine(directory, value));
+                    var fingerprint = File.ReadAllText(Path.Combine(directory, "direct-leaf-fingerprint.txt"));
+                    Assert.Equal(fingerprint, Validator().Validate(directLeaf, null));
+                    Assert.Equal(fingerprint, Validator().Validate(directLeaf, []));
+                }
+                var printableLeaf = File.ReadAllText(Path.Combine(directory, "printable-leaf.txt"));
+                var printableFingerprint = File.ReadAllText(Path.Combine(directory, "printable-fingerprint.txt"));
+                Assert.Equal(printableFingerprint, Validator().Validate(printableLeaf, null));
+                Assert.Equal(printableFingerprint, Validator().Validate(printableLeaf, [root]));
+                Assert.Equal(printableFingerprint, Validator().Validate(printableLeaf, [intermediate]));
+                Assert.Equal(File.ReadAllText(Path.Combine(directory, "direct-leaf-fingerprint.txt")),
+                    Validator().Validate(File.ReadAllText(Path.Combine(directory, "direct-leaf.txt")),
+                        [File.ReadAllText(Path.Combine(directory, "printable-ca.txt"))]));
             }
             else
             {
@@ -45,12 +62,21 @@ public sealed class ClientCertificateValidatorTests : IDisposable
         }
 
         var extended = _certificates.Leaf(_certificates.IntermediateA, extension: Convert.FromHexString("1B0161"));
+        var direct = _certificates.Leaf(_certificates.RootA);
+        var printable = PrintableCertificate(ca: false);
+        var printableCa = PrintableCertificate(ca: true);
         var fixtures = new Dictionary<string, string>
         {
             ["leaf.txt"] = Leaf,
             ["leaf-fingerprint.txt"] = TestCertificateChains.Fingerprint(_certificates.LeafA),
             ["general-string-leaf.txt"] = TestCertificateChains.Base64(extended),
             ["general-string-fingerprint.txt"] = TestCertificateChains.Fingerprint(extended),
+            ["direct-leaf.txt"] = TestCertificateChains.Base64(direct),
+            ["direct-leaf-pem.txt"] = Convert.ToBase64String(Encoding.ASCII.GetBytes(direct.ExportCertificatePem())),
+            ["direct-leaf-fingerprint.txt"] = TestCertificateChains.Fingerprint(direct),
+            ["printable-leaf.txt"] = TestCertificateChains.Base64(printable),
+            ["printable-fingerprint.txt"] = TestCertificateChains.Fingerprint(printable),
+            ["printable-ca.txt"] = TestCertificateChains.Base64(printableCa),
             ["intermediate.txt"] = Intermediate,
             ["root.txt"] = TestCertificateChains.Base64(_certificates.RootA),
             ["trusted-root.pem"] = _certificates.RootA.ExportCertificatePem(),
@@ -70,6 +96,111 @@ public sealed class ClientCertificateValidatorTests : IDisposable
     [Fact]
     public void MissingIntermediateFailsWithoutAia()
         => Assert.Throws<UnauthorizedException>(() => Validator().Validate(Leaf, null));
+
+    [Fact]
+    public void PrintableStringKeepsNativeLoadingForLeafAndUnusedCandidate()
+    {
+        var leaf = PrintableCertificate(ca: false);
+        var encoded = TestCertificateChains.Base64(leaf);
+        Assert.Equal(TestCertificateChains.Fingerprint(leaf), Validator().GetFingerprint(encoded));
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(encoded, null));
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(encoded, [TestCertificateChains.Base64(_certificates.RootA)]));
+        var candidate = PrintableCertificate(ca: true);
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(Leaf, [Intermediate, TestCertificateChains.Base64(candidate)]));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task AiaDownloadsRemainLeafOnly(int material)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Assert.Throws<UnauthorizedException>(() => Validator().Validate(Leaf,
+                [TestCertificateChains.Base64(_certificates.RootA)]));
+            return;
+        }
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var aia = new AsnWriter(AsnEncodingRules.DER);
+        aia.PushSequence(); aia.PushSequence();
+        aia.WriteObjectIdentifier("1.3.6.1.5.5.7.48.2");
+        aia.WriteCharacterString(UniversalTagNumber.IA5String, $"http://127.0.0.1:{port}/issuer", new Asn1Tag(TagClass.ContextSpecific, 6));
+        aia.PopSequence(); aia.PopSequence();
+        using var key = RSA.Create(2048);
+        var leaf = _certificates.Issue("CN=Loopback AIA leaf", key, _certificates.IntermediateA, false,
+            before: DateTimeOffset.UtcNow.AddDays(-1), after: DateTimeOffset.UtcNow.AddDays(1),
+            authorityInformationAccess: aia.Encode());
+        var requests = 0;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serve = Task.Run(async () =>
+        {
+            try
+            {
+                using var client = await listener.AcceptTcpClientAsync(cancellation.Token);
+                Interlocked.Increment(ref requests);
+                using var stream = client.GetStream();
+                using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+                while (await reader.ReadLineAsync(cancellation.Token) is { Length: > 0 }) { }
+                await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), cancellation.Token);
+            }
+            catch (OperationCanceledException) { }
+        });
+        try
+        {
+            IReadOnlyList<string>? candidates = material switch
+            {
+                0 => null,
+                1 => [],
+                _ => [TestCertificateChains.Base64(_certificates.RootA)]
+            };
+            Assert.Throws<UnauthorizedException>(() => Validator().Validate(TestCertificateChains.Base64(leaf), candidates));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await serve;
+        }
+        Assert.Equal(material == 2 ? 0 : 1, requests);
+    }
+
+    [Theory]
+    [InlineData("missing", X509ChainStatusFlags.PartialChain)]
+    [InlineData("untrusted", X509ChainStatusFlags.UntrustedRoot)]
+    [InlineData("expired", X509ChainStatusFlags.NotTimeValid)]
+    public void TrustFailureReportsOnlySafeStatusFlags(string scenario, X509ChainStatusFlags expected)
+    {
+        var leaf = scenario == "expired"
+            ? _certificates.Leaf(_certificates.IntermediateA, DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddDays(-2))
+            : _certificates.LeafA;
+        var encoded = TestCertificateChains.Base64(leaf);
+        var exception = Assert.Throws<UnauthorizedException>(() => Validator().Validate(encoded,
+            scenario == "missing" ? null : [Intermediate, TestCertificateChains.Base64(_certificates.RootA)]));
+        var wire = new ErrorDetails(exception);
+        Assert.Equal(401, wire.StatusCode);
+        Assert.Equal("User client certificate is invalid.", wire.Message);
+        var detail = exception.InnerException!.Message;
+        Assert.Contains(expected.ToString(), detail);
+        var flags = detail.Split(':', 2)[1].Trim().TrimEnd('.').Split(", ");
+        Assert.All(flags, flag => Assert.Contains(flag, Enum.GetNames<X509ChainStatusFlags>()));
+        Assert.DoesNotContain(leaf.Subject, detail);
+        Assert.DoesNotContain(leaf.Issuer, detail);
+        Assert.DoesNotContain(encoded, detail);
+    }
+
+    private X509Certificate2 PrintableCertificate(bool ca)
+    {
+        var name = new AsnWriter(AsnEncodingRules.DER);
+        name.PushSequence(); name.PushSetOf(); name.PushSequence();
+        name.WriteObjectIdentifier("2.5.4.3");
+        name.WriteEncodedValue(Convert.FromHexString("130540265F202A"));
+        name.PopSequence(); name.PopSetOf(); name.PopSequence();
+        using var key = RSA.Create(2048);
+        return _certificates.Issue("CN=PrintableString", key, _certificates.RootA, ca,
+            subjectName: new X500DistinguishedName(name.Encode()));
+    }
 
     [Fact]
     public void SelfSignedLeafCannotAuthorizeItself()
@@ -136,6 +267,8 @@ public sealed class ClientCertificateValidatorTests : IDisposable
     [InlineData("2B0BA00606012A06012A040100")] // EMBEDDED PDV.
     [InlineData("3D0BA00606012A06012A040100")] // CHARACTER STRING.
     [InlineData("3108A003020101810100")] // SET fields ordered by tag number, not encoded octets.
+    [InlineData("3108810100A003020101")] // SET OF CHOICE ordered by encoded octets, not tag number.
+    [InlineData("310702010180020500")] // SET tag classes take precedence over tag numbers.
     [InlineData("3107800100A0020500")] // SET OF equal context-specific tags, with different P/C bits.
     [InlineData("3109020101020102040100")] // SET OF CHOICE values sorted across every element.
     [InlineData("800101")]
@@ -182,7 +315,7 @@ public sealed class ClientCertificateValidatorTests : IDisposable
     {
         var encoded = WithExtension(Convert.FromHexString(extension), "2.5.29.19");
         Assert.Throws<InvalidFormatException>(() => malformedLeaf
-            ? Validator().Validate(encoded, [])
+            ? Validator().Validate(encoded, [Intermediate])
             : Validator().Validate(Leaf, [Intermediate, encoded]));
     }
 
@@ -192,11 +325,15 @@ public sealed class ClientCertificateValidatorTests : IDisposable
     [InlineData("3107A0020500800100", false)]
     [InlineData("3107A0020500800100", true)]
     [InlineData("3109020101040100020102", false)] // Repeated INTEGER pair is sorted; the full SET OF is not.
+    [InlineData("3106040100020101", false)] // Unique tags violate both SET and SET OF ordering.
+    [InlineData("3106040100020101", true)]
+    [InlineData("3106800100020101", false)] // Unique tag classes violate both orders.
+    [InlineData("3106800100020101", true)]
     public void UnsortedSetOfInPrivateExtensionFailsBeforeTrust(string extension, bool malformedLeaf)
     {
         var encoded = WithExtension(Convert.FromHexString(extension));
         Assert.Throws<InvalidFormatException>(() => malformedLeaf
-            ? Validator().Validate(encoded, [])
+            ? Validator().Validate(encoded, [Intermediate])
             : Validator().Validate(Leaf, [Intermediate, encoded]));
     }
 
@@ -278,7 +415,11 @@ public sealed class ClientCertificateValidatorTests : IDisposable
         var pem = Convert.ToBase64String(Encoding.ASCII.GetBytes(_certificates.LeafA.ExportCertificatePem()));
         Assert.Equal(TestCertificateChains.Fingerprint(_certificates.LeafA), Validator().GetFingerprint(pem));
         Assert.Throws<UnauthorizedException>(() => Validator().Validate(pem, null));
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(pem, []));
         Assert.Throws<InvalidFormatException>(() => Validator().Validate(pem, [Intermediate]));
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(Leaf, null));
+        Assert.Throws<UnauthorizedException>(() => Validator().Validate(Leaf, []));
+        Assert.Throws<InvalidFormatException>(() => Validator().Validate(pem, [""]));
         Assert.Equal(TestCertificateChains.Fingerprint(_certificates.LeafA), Validator().GetFingerprint(Leaf + "\n"));
     }
 

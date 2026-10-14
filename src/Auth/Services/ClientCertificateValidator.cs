@@ -24,7 +24,7 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
     {
         CheckRequestBounds(certificateContent, certificateChain);
 
-        using var leaf = LoadCertificate(certificateContent, certificateChain != null);
+        using var leaf = LoadCertificate(certificateContent, certificateChain is { Count: > 0 });
         var candidates = new List<X509Certificate2>();
         try
         {
@@ -33,8 +33,9 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
+            if (certificateChain is { Count: > 0 }) chain.ChainPolicy.DisableCertificateDownloads = true;
             chain.ChainPolicy.ExtraStore.AddRange(candidates.ToArray());
-            if (!chain.Build(leaf)) throw InvalidTrust();
+            if (!chain.Build(leaf)) throw InvalidTrust(chain.ChainStatus);
 
             return Fingerprint(leaf);
         }
@@ -165,22 +166,24 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
             (UniversalTagNumber.External or UniversalTagNumber.Embedded or UniversalTagNumber.Sequence or
              UniversalTagNumber.Set or UniversalTagNumber.UnrestrictedCharacterString))
             throw InvalidCertificateFormat();
-        // Distinct tags permit SET fields; repeated tags require canonical SET OF byte ordering.
+        // Unknown SET values require tag ordering or SET OF byte ordering, which differ for constructed tags.
         // EXTERNAL, EMBEDDED PDV and CHARACTER STRING also contain constructed DER values.
         var contents = reader.PeekContentBytes();
-        if (tag.HasSameClassAndValue(Asn1Tag.SetOf) && HasRepeatedTags(contents)) return reader.ReadSetOf();
+        if (tag.HasSameClassAndValue(Asn1Tag.SetOf) && RequiresSetOfOrdering(contents)) return reader.ReadSetOf();
         reader.ReadEncodedValue();
         return new AsnReader(contents, AsnEncodingRules.DER);
     }
 
-    private static bool HasRepeatedTags(ReadOnlyMemory<byte> contents)
+    private static bool RequiresSetOfOrdering(ReadOnlyMemory<byte> contents)
     {
         var reader = new AsnReader(contents, AsnEncodingRules.DER);
-        var tags = new HashSet<(TagClass, int)>();
+        Asn1Tag? previous = null;
         while (reader.HasData)
         {
             var tag = reader.PeekTag();
-            if (!tags.Add((tag.TagClass, tag.TagValue))) return true;
+            if (previous is { } prior && ((int)tag.TagClass < (int)prior.TagClass
+                || tag.TagClass == prior.TagClass && tag.TagValue <= prior.TagValue)) return true;
+            previous = tag;
             reader.ReadEncodedValue();
         }
         return false;
@@ -200,9 +203,12 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
             case UniversalTagNumber.Enumerated: reader.ReadEnumeratedBytes(); break;
             case UniversalTagNumber.UtcTime: reader.ReadUtcTime(); break;
             case UniversalTagNumber.GeneralizedTime: reader.ReadGeneralizedTime(); break;
+            case UniversalTagNumber.PrintableString:
+                // Preserve native certificate loading for legacy encoders with nonstandard PrintableString characters.
+                reader.ReadEncodedValue();
+                break;
             case UniversalTagNumber.UTF8String:
             case UniversalTagNumber.NumericString:
-            case UniversalTagNumber.PrintableString:
             case UniversalTagNumber.T61String:
             case UniversalTagNumber.IA5String:
             case UniversalTagNumber.VisibleString:
@@ -240,5 +246,13 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
         => Convert.ToHexString(certificate.GetCertHash(HashAlgorithmName.SHA256)).ToLowerInvariant();
 
     private static InvalidFormatException InvalidCertificateFormat() => new("Wrong format of user authentication certificate.");
-    private static UnauthorizedException InvalidTrust() => new("User client certificate is invalid.", new Exception("Certificate trust validation failed."));
+    private static UnauthorizedException InvalidTrust(X509ChainStatus[]? statuses = null)
+    {
+        var flags = statuses == null ? [] : Enum.GetValues<X509ChainStatusFlags>()
+            .Where(flag => flag != X509ChainStatusFlags.NoError && statuses.Any(status => (status.Status & flag) != 0))
+            .Select(flag => flag.ToString()).ToArray();
+        var detail = flags.Length == 0 ? "Certificate trust validation failed."
+            : $"Certificate trust validation failed: {string.Join(", ", flags)}.";
+        return new UnauthorizedException("User client certificate is invalid.", new Exception(detail));
+    }
 }
