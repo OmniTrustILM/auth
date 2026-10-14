@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -57,21 +59,23 @@ public sealed class TestCertificateChains : IDisposable
     }
 
     public X509Certificate2 Issue(string subject, RSA key, X509Certificate2 issuer, bool ca,
-        DateTimeOffset? before = null, DateTimeOffset? after = null, int padding = 0)
+        DateTimeOffset? before = null, DateTimeOffset? after = null, int padding = 0, byte[]? extension = null)
     {
         var serial = RandomNumberGenerator.GetBytes(16);
         // A positive, nonzero leading byte gives exact-size fixtures a stable DER INTEGER length.
         serial[0] = 1;
-        using var publicCertificate = Request(subject, key, ca, padding).Create(issuer,
+        var request = Request(subject, key, ca, padding);
+        if (extension != null) request.CertificateExtensions.Add(new X509Extension("1.3.6.1.4.1.55555.2", extension, false));
+        using var publicCertificate = request.Create(issuer,
             before ?? DateTimeOffset.UtcNow.AddYears(-1), after ?? DateTimeOffset.UtcNow.AddYears(1), serial);
         return Own(publicCertificate.CopyWithPrivateKey(key));
     }
 
-    public X509Certificate2 Leaf(X509Certificate2 issuer, DateTimeOffset? before = null, DateTimeOffset? after = null)
+    public X509Certificate2 Leaf(X509Certificate2 issuer, DateTimeOffset? before = null, DateTimeOffset? after = null, byte[]? extension = null)
     {
         using var key = RSA.Create(2048);
         return Issue("CN=Client " + Guid.NewGuid(), key, issuer, false,
-            before ?? DateTimeOffset.UtcNow.AddDays(-1), after ?? DateTimeOffset.UtcNow.AddDays(1));
+            before ?? DateTimeOffset.UtcNow.AddDays(-1), after ?? DateTimeOffset.UtcNow.AddDays(1), extension: extension);
     }
 
     public X509Certificate2 LargeLeaf(int size)
@@ -94,6 +98,53 @@ public sealed class TestCertificateChains : IDisposable
         var path = Path.Combine(DirectoryPath, Guid.NewGuid() + ".pem");
         File.WriteAllText(path, string.Join('\n', certificates.Select(c => c.ExportCertificatePem())));
         return path;
+    }
+
+    public async Task RunSystemTrustProbe(string rootBundle, string testName)
+    {
+        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(TestCertificateChains).Assembly.Location);
+        start.ArgumentList.Add("--TestCaseFilter:FullyQualifiedName=" + testName);
+        start.Environment["AUTH_SYSTEM_TRUST_FIXTURE_DIRECTORY"] = DirectoryPath;
+        start.Environment["AUTH_SYSTEM_TRUST_EXPECTED_ROOT"] = rootBundle;
+        // OpenSSL reads these only in the child; the parent and other tests retain their System trust.
+        start.Environment["SSL_CERT_FILE"] = rootBundle;
+        var emptyCaDirectory = Path.Combine(DirectoryPath, "empty-ca-directory");
+        Directory.CreateDirectory(emptyCaDirectory);
+        start.Environment["SSL_CERT_DIR"] = emptyCaDirectory;
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start isolated certificate trust test.");
+        var output = ReadProbeOutput(process.StandardOutput);
+        var error = ReadProbeOutput(process.StandardError);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            throw new TimeoutException("Isolated certificate trust test exceeded 45 seconds.");
+        }
+        var diagnostics = await output + await error;
+        Assert.True(process.ExitCode == 0, diagnostics);
+        Assert.Matches(@"Passed:\s+1\b", diagnostics);
+    }
+
+    private static async Task<string> ReadProbeOutput(StreamReader reader)
+    {
+        var output = new StringBuilder();
+        var buffer = new char[1024];
+        int count;
+        while ((count = await reader.ReadAsync(buffer)) > 0)
+            output.Append(buffer, 0, Math.Min(count, 16384 - output.Length));
+        return output.ToString();
     }
 
     public void Dispose()

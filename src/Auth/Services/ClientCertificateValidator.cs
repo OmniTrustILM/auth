@@ -115,7 +115,7 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
                     var reader = new AsnReader(extension.RawData, AsnEncodingRules.DER);
                     var value = reader.ReadEncodedValue();
                     reader.ThrowIfNotEmpty();
-                    ValidateDerContents(new AsnReader(value, AsnEncodingRules.DER));
+                    ValidateDerContents(new AsnReader(value, AsnEncodingRules.DER), extensionValue: true);
                 }
             }
             return certificate;
@@ -127,7 +127,7 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
         }
     }
 
-    private static void ValidateDerContents(AsnReader contents)
+    private static void ValidateDerContents(AsnReader contents, bool extensionValue = false)
     {
         // Each TLV consumes bounded input. An explicit stack also bounds adversarial nesting.
         var readers = new Stack<AsnReader>();
@@ -144,23 +144,49 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
             if (tag.IsConstructed)
             {
                 if (readers.Count >= 32) throw InvalidCertificateFormat();
-                readers.Push(ReadDerConstructed(reader, tag));
+                readers.Push(ReadDerConstructed(reader, tag, extensionValue));
             }
             else if (tag.TagClass == TagClass.Universal)
             {
-                ValidateDerPrimitive(reader, (UniversalTagNumber)tag.TagValue);
+                ValidateDerPrimitive(reader, (UniversalTagNumber)tag.TagValue, extensionValue);
             }
             else reader.ReadEncodedValue();
         }
     }
 
-    private static AsnReader ReadDerConstructed(AsnReader reader, Asn1Tag tag)
+    private static AsnReader ReadDerConstructed(AsnReader reader, Asn1Tag tag, bool extensionValue)
     {
-        if (tag.HasSameClassAndValue(Asn1Tag.SetOf)) return reader.ReadSetOf();
-        return reader.ReadSequence(tag.TagClass == TagClass.Universal ? null : tag);
+        if (!extensionValue)
+        {
+            if (tag.HasSameClassAndValue(Asn1Tag.SetOf)) return reader.ReadSetOf();
+            return reader.ReadSequence(tag.TagClass == TagClass.Universal ? null : tag);
+        }
+        if (tag.TagClass == TagClass.Universal && (UniversalTagNumber)tag.TagValue is not
+            (UniversalTagNumber.External or UniversalTagNumber.Embedded or UniversalTagNumber.Sequence or
+             UniversalTagNumber.Set or UniversalTagNumber.UnrestrictedCharacterString))
+            throw InvalidCertificateFormat();
+        // Distinct tags permit SET fields; repeated tags require canonical SET OF byte ordering.
+        // EXTERNAL, EMBEDDED PDV and CHARACTER STRING also contain constructed DER values.
+        var contents = reader.PeekContentBytes();
+        if (tag.HasSameClassAndValue(Asn1Tag.SetOf) && HasRepeatedTags(contents)) return reader.ReadSetOf();
+        reader.ReadEncodedValue();
+        return new AsnReader(contents, AsnEncodingRules.DER);
     }
 
-    private static void ValidateDerPrimitive(AsnReader reader, UniversalTagNumber tag)
+    private static bool HasRepeatedTags(ReadOnlyMemory<byte> contents)
+    {
+        var reader = new AsnReader(contents, AsnEncodingRules.DER);
+        var tags = new HashSet<(TagClass, int)>();
+        while (reader.HasData)
+        {
+            var tag = reader.PeekTag();
+            if (!tags.Add((tag.TagClass, tag.TagValue))) return true;
+            reader.ReadEncodedValue();
+        }
+        return false;
+    }
+
+    private static void ValidateDerPrimitive(AsnReader reader, UniversalTagNumber tag, bool extensionValue)
     {
         // Typed DER readers enforce canonical content as well as tag and length encodings.
         switch (tag)
@@ -189,7 +215,18 @@ public sealed class ClientCertificateValidator : IClientCertificateValidator
                     .GetCharCount(reader.PeekContentBytes().Span);
                 reader.ReadEncodedValue();
                 break;
-            default: throw InvalidCertificateFormat();
+            default:
+                // Assigned ASN.1 types without a BCL decoder remain opaque to this OID-agnostic check.
+                // ReadEncodedValue still enforces their canonical DER tag and length encoding.
+                if (!extensionValue || tag is not
+                    (UniversalTagNumber.ObjectDescriptor or UniversalTagNumber.Real or UniversalTagNumber.RelativeObjectIdentifier or
+                     UniversalTagNumber.Time or UniversalTagNumber.VideotexString or UniversalTagNumber.GraphicString or
+                     UniversalTagNumber.GeneralString or UniversalTagNumber.Date or UniversalTagNumber.TimeOfDay or
+                     UniversalTagNumber.DateTime or UniversalTagNumber.Duration or UniversalTagNumber.ObjectIdentifierIRI or
+                     UniversalTagNumber.RelativeObjectIdentifierIRI))
+                    throw InvalidCertificateFormat();
+                reader.ReadEncodedValue();
+                break;
         }
     }
 
