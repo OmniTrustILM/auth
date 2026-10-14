@@ -78,6 +78,7 @@ try
     // add app services
     builder.Services.AddScoped<ValidationFilter>();
     builder.Services.AddScoped<IRepositoryManager, RepositoryManager>();
+    builder.Services.AddScoped<IClientCertificateValidator, ClientCertificateValidator>();
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<IRoleService, RoleService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();

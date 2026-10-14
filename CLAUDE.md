@@ -16,17 +16,22 @@ Guidance for agents working in this repository.
 | `docker/` | Files copied into the runtime image: `entry.sh` (container entrypoint), `update-cacerts.sh`, `static-functions`. |
 | `Dockerfile` | Multi-stage build (Alpine-based .NET 9 SDK/ASP.NET images) producing the `ilm/auth` runtime image. |
 
-There is no test project — `Auth.sln` reserves a `tests` solution folder, but it has no project in it yet.
+`Auth.sln` includes `tests/Auth.Tests/Auth.Tests.csproj`, targeting .NET 9 with xUnit and the OpenCover collector. Service, repository, controller, mapping and certificate-trust tests live there.
+
+Client certificate validation preserves the existing .NET System trust store and deployment CA mounts. Requests carry `certificateContent` and an optional bounded `certificateChain`; candidates enter ExtraStore only and cannot become anchors. Leaf-only requests retain the legacy BCL loader, including Base64-wrapped PEM. Authentication still resolves an enabled registered leaf identity and its profile. Trust refresh follows the runtime's existing behavior; Core retains its existing authentication cache.
 
 ## Commands
 
 - Restore: `dotnet restore`
 - Build: `dotnet build --no-restore`
+- Test and coverage: `dotnet test --no-build --collect:"XPlat Code Coverage;Format=opencover" --results-directory ./coverage`
 - Docker image: `docker build -f Dockerfile -t ilm/auth .`
 
-Run restore + build from the repo root before considering a change done. There is no test project, so there are no unit/integration test commands to run yet.
+Run restore, build and the full test suite from the repo root before considering a change done. Preserve the existing `coverage/**/coverage.opencover.xml` report path and migrations-only production coverage exclusion.
 
 ## Conventions
+
+New dependencies must be compatible with Apache-2.0 and permitted by the CNCF third-party license policy; verify new transitives and preserve notices.
 
 - Every third-party GitHub Action reference is pinned to a full commit SHA
   with the human-readable version as a trailing comment, e.g.
@@ -70,8 +75,8 @@ Run restore + build from the repo root before considering a change done. There i
     `check_pr.yml` (builds, runs `dotnet test` with
     `--collect:"XPlat Code Coverage;Format=opencover"`, and uploads a
     `coverage-report` artifact — always non-empty, via a
-    `coverage/no-coverage-placeholder.txt` placeholder, even before a test
-    project exists, plus a `pr-context` artifact; the placeholder must be a
+    `coverage/no-coverage-placeholder.txt` placeholder alongside test reports,
+    plus a `pr-context` artifact; the placeholder must be a
     normal filename, not a dotfile — `actions/upload-artifact` excludes
     hidden files by default) → `dispatch-sonar.yml` (validates the PR
     context artifact against strict patterns and dispatches `sonar.yml` via
@@ -101,9 +106,9 @@ Run restore + build from the repo root before considering a change done. There i
     no PR branch to re-pin `SonarQube.Analysis.xml` against. This maintains
     the SonarCloud main-branch baseline that PR analysis compares against.
   - Coverage is OpenCover format via the built-in `XPlat Code Coverage`
-    collector (`coverlet.collector`); it activates automatically once a test
-    project exists; today it produces no files and the placeholder file
-    keeps the artifact upload from failing.
+    collector (`coverlet.collector`); the test project produces the reports
+    under `coverage/**/coverage.opencover.xml`. The existing placeholder
+    keeps artifact upload robust when a run produces no report.
 - **CodeQL** (`codeql.yml`) — Advanced-shape matrix over `actions` and
   `csharp`, both with `build-mode: none`, plus a weekly schedule.
 - **Container security** — the shared `containers-test.yml` /
