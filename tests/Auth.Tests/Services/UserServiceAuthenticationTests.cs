@@ -161,6 +161,75 @@ public class UserServiceAuthenticationTests
 
     #endregion
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ValidatedCertificateAuthenticatesEnabledRegisteredUserAndReturnsProfile(bool forwardedChain)
+    {
+        using var certificates = new TestCertificateChains();
+        var user = User("certificate-user");
+        user.CertificateFingerprint = TestCertificateChains.Fingerprint(certificates.LeafA);
+        user.Roles.Add(new Role { Name = "certificate-role", Users = [] });
+        _manager.UserRepository.Seed(user);
+        var response = await ServiceFactory.User(_manager, permissionService: _permissions, clientCertificateValidator: new ValidatedLeaf(certificates.LeafA))
+            .AuthenticateUserAsync(new AuthenticationRequestDto
+            {
+                CertificateContent = TestCertificateChains.Base64(certificates.LeafA),
+                CertificateChain = forwardedChain ? [TestCertificateChains.Base64(certificates.IntermediateA)] : null,
+                AuthenticationTokenUserClaims = Claims(),
+            });
+        Assert.True(response.Authenticated);
+        Assert.Equal(user.Uuid, response.Data!.User.Uuid);
+        Assert.Equal("certificate-role", Assert.Single(response.Data.Roles).Name);
+        Assert.Same(_permissions.SubjectPermissions, response.Data.Permissions);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ValidatedCertificateRefusesDisabledOrUnknownUser(bool known)
+    {
+        using var certificates = new TestCertificateChains();
+        if (known)
+        {
+            var user = User("certificate-user", enabled: false);
+            user.CertificateFingerprint = TestCertificateChains.Fingerprint(certificates.LeafA);
+            _manager.UserRepository.Seed(user);
+        }
+        await Assert.ThrowsAsync<UnauthorizedException>(() => ServiceFactory.User(_manager, new AuthOptions { CreateUnknownUsers = true }, clientCertificateValidator: new ValidatedLeaf(certificates.LeafA)).AuthenticateUserAsync(new AuthenticationRequestDto
+        {
+            CertificateContent = TestCertificateChains.Base64(certificates.LeafA),
+            CertificateChain = [TestCertificateChains.Base64(certificates.IntermediateA)],
+        }));
+        Assert.Empty(_manager.Transactions);
+    }
+
+    [Fact]
+    public async Task ChainWithoutLeafNeverFallsThroughToToken()
+    {
+        _manager.UserRepository.Seed(User("jane"));
+        await Assert.ThrowsAsync<InvalidFormatException>(() => Service().AuthenticateUserAsync(new AuthenticationRequestDto
+        {
+            CertificateChain = [], AuthenticationTokenUserClaims = Claims(),
+        }));
+        Assert.Empty(_manager.Transactions);
+    }
+
+    [Fact]
+    public async Task LegacyWrappedPemIdentificationStillUsesTheCertificateFingerprintWithoutTrust()
+    {
+        var user = User("legacy-pem-user");
+        user.CertificateFingerprint = TestCertificates.Sha256Fingerprint;
+        _manager.UserRepository.Seed(user);
+        var wrappedPem = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(TestCertificates.Certificate.ExportCertificatePem()));
+        var response = await Service().IdentifyUserAsync(
+            new AuthenticationRequestDto { CertificateContent = wrappedPem });
+        Assert.Equal(user.Uuid, response.Uuid);
+        var exception = await Assert.ThrowsAsync<UnauthorizedException>(() => Service().AuthenticateUserAsync(
+            new AuthenticationRequestDto { CertificateContent = wrappedPem }));
+        Assert.Equal("User client certificate is invalid.", exception.Message);
+    }
+
     #region Token authentication
 
     [Fact]
@@ -565,6 +634,13 @@ public class UserServiceAuthenticationTests
     }
 
     #endregion
+
+    // Service tests isolate profile resolution from the external System store; the runtime proof exercises real trust.
+    private sealed class ValidatedLeaf(System.Security.Cryptography.X509Certificates.X509Certificate2 leaf) : IClientCertificateValidator
+    {
+        public string GetFingerprint(string content) => new ClientCertificateValidator().GetFingerprint(content);
+        public string Validate(string content, IReadOnlyList<string>? chain) => TestCertificateChains.Fingerprint(leaf);
+    }
 
     private sealed class ThrowingRoleService : IRoleService
     {

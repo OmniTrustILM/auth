@@ -28,11 +28,7 @@ After successful identification, user details with its merged role permissions i
 
 ### X.509 certificate
 
-When identifying user with certificate, its content string is decoded and parsed.
-Afterwards it is verified if it is valid and trusted.
-
-Then, based on its fingerprint, it is mapped to user from database and return authentication response.
-The certificate can be assigned to maximum of 1 user. 
+See [Client certificate authentication](https://docs.otilm.com/docs/certificate-key/installation-guide/deployment/client-certificate-authentication) for certificate sign-in and gateway configuration.
 
 ### JSON ID
 

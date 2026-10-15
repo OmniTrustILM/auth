@@ -29,11 +29,14 @@ public static class ServiceFactory
         FakeRepositoryManager manager,
         AuthOptions? authOptions = null,
         IPermissionService? permissionService = null,
-        IRoleService? roleService = null)
+        IRoleService? roleService = null,
+        IClientCertificateValidator? clientCertificateValidator = null)
     {
         permissionService ??= new FakePermissionService();
         roleService ??= Role(manager, permissionService);
 
-        return new UserService(manager, NullLogger<UserService>.Instance, Options.Create(authOptions ?? new AuthOptions()), roleService, permissionService);
+        var options = Options.Create(authOptions ?? new AuthOptions());
+        clientCertificateValidator ??= new ClientCertificateValidator();
+        return new UserService(manager, NullLogger<UserService>.Instance, options, roleService, permissionService, clientCertificateValidator);
     }
 }

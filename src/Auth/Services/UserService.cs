@@ -11,21 +11,21 @@ using Auth.Models.Mappings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 
 namespace Auth.Services
 {
     public class UserService : CrudService<User, UserDto, UserDetailDto>, IUserService
     {
         private AuthOptions _authOptions;
+        private readonly IClientCertificateValidator _clientCertificateValidator;
         private readonly IRoleService _roleService;
         private readonly IPermissionService _permissionService;
 
-        public UserService(IRepositoryManager repositoryManager, ILogger<UserService> logger, IOptions<AuthOptions> authOptions, IRoleService roleService, IPermissionService permissionService)
+        public UserService(IRepositoryManager repositoryManager, ILogger<UserService> logger, IOptions<AuthOptions> authOptions, IRoleService roleService, IPermissionService permissionService, IClientCertificateValidator clientCertificateValidator)
             : base(repositoryManager, repositoryManager.User, UserEntityMapper.Instance, logger)
         {
             _authOptions = authOptions.Value;
+            _clientCertificateValidator = clientCertificateValidator;
 
             _roleService = roleService;
             _permissionService = permissionService;
@@ -89,9 +89,7 @@ namespace Auth.Services
             if (!string.IsNullOrEmpty(authenticationRequestDto.CertificateContent))
             {
                 _logger.LogInformation("Identifying user with certificate");
-                var clientCertificate = ParseCertificate(authenticationRequestDto.CertificateContent);
-
-                var sha256Fingerprint = Convert.ToHexString(clientCertificate.GetCertHash(HashAlgorithmName.SHA256)).ToLower();
+                var sha256Fingerprint = _clientCertificateValidator.GetFingerprint(authenticationRequestDto.CertificateContent);
                 _logger.LogInformation("Certificate parsed. Fingerprint: {Fingerprint}", SanitizeForLog(sha256Fingerprint));
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
@@ -116,15 +114,16 @@ namespace Auth.Services
 
         public async Task<AuthenticationResponseDto> AuthenticateUserAsync(AuthenticationRequestDto authenticationRequestDto)
         {
+            if (string.IsNullOrEmpty(authenticationRequestDto.CertificateContent)
+                && authenticationRequestDto.CertificateChain != null)
+                throw new InvalidFormatException("Wrong format of user authentication certificate.");
+
             User? user = null;
             if (!string.IsNullOrEmpty(authenticationRequestDto.CertificateContent))
             {
                 _logger.LogDebug("Authenticating user with certificate");
-                var clientCertificate = ParseCertificate(authenticationRequestDto.CertificateContent);
-                var isCertValid = VerifyClientCertificate(clientCertificate, out var chainStatusInfos);
-                if (!isCertValid) throw new UnauthorizedException("User client certificate is invalid.", new Exception(string.Join('\n', chainStatusInfos)));
-
-                var sha256Fingerprint = Convert.ToHexString(clientCertificate.GetCertHash(HashAlgorithmName.SHA256)).ToLower();
+                var sha256Fingerprint = _clientCertificateValidator.Validate(authenticationRequestDto.CertificateContent,
+                    authenticationRequestDto.CertificateChain);
                 _logger.LogDebug("Certificate parsed and verified. Fingerprint: {Fingerprint}", SanitizeForLog(sha256Fingerprint));
 
                 user = await _repository.GetByConditionAsync(u => u.CertificateFingerprint == sha256Fingerprint);
@@ -339,41 +338,6 @@ namespace Auth.Services
             await _repositoryManager.SaveAsync();
 
             return user.ToDetailDto();
-        }
-
-        private static X509Certificate2 ParseCertificate(string clientCertificateContent)
-        {
-            try
-            {
-                return X509CertificateLoader.LoadCertificate(Convert.FromBase64String(clientCertificateContent));
-            }
-            catch (FormatException ex)
-            {
-                throw new InvalidFormatException("Wrong format of user authentication certificate.", ex);
-            }
-        }
-
-        private static bool VerifyClientCertificate(X509Certificate2 certificate, out List<string> chainStatusInfos)
-        {
-            chainStatusInfos = new List<string>();
-
-            var chain = new X509Chain();
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // no revocation checking for now
-            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
-
-            var isValid = chain.Build(certificate);
-            if (!isValid)
-            {
-                foreach (X509ChainElement chainElement in chain.ChainElements)
-                {
-                    foreach (X509ChainStatus chainStatus in chainElement.ChainElementStatus)
-                    {
-                        chainStatusInfos.Add($"Certificate issued by '{chainElement.Certificate.IssuerName.Name}' with subject '{chainElement.Certificate.SubjectName.Name}' is invalid: {chainStatus.StatusInformation}");
-                    }
-                }
-            }
-            return isValid;
         }
 
         public async Task<List<UserDto>> GetRoleUsersAsync(Guid roleUuid)
